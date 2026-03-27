@@ -1,0 +1,3045 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Research Terminal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3/dist/chartjs-plugin-annotation.min.js"></script>
+
+  <style>
+    /* ── Reset ──────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body {
+      background: #060B18;
+      color: #D0D8E8;
+      font-family: 'IBM Plex Sans', -apple-system, sans-serif;
+      font-size: 13px;
+      font-weight: 400;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+    .mono { font-family: 'IBM Plex Mono', 'SF Mono', monospace; }
+
+    /* ── Header ─────────────────────────────────────────────────────── */
+    .header {
+      position: sticky; top: 0; z-index: 100;
+      background: #07101F;
+      border-bottom: 1px solid #18243A;
+      padding: 8px 24px;
+      display: flex; align-items: center; gap: 16px;
+    }
+    .logo {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px; font-weight: 500; letter-spacing: 2px;
+      color: #00C896; white-space: nowrap; user-select: none;
+    }
+    .ticker-row { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+    .ticker-input {
+      background: #060B18;
+      border: 1px solid #18243A;
+      border-radius: 2px;
+      color: #D0D8E8;
+      padding: 4px 8px;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px; font-weight: 400;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      width: 86px;
+      transition: border-color 0.12s;
+    }
+    .ticker-input:focus { outline: none; border-color: #4A9FFF; }
+    .ticker-input::placeholder { color: #2E3E52; text-transform: none; letter-spacing: 0; }
+    .pill {
+      padding: 3px 9px;
+      border-radius: 2px;
+      border: 1px solid #18243A;
+      background: transparent;
+      color: #4A5A72;
+      cursor: pointer;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 10px; font-weight: 400;
+      letter-spacing: 0.8px;
+      transition: border-color 0.12s, color 0.12s;
+    }
+    .pill:hover { border-color: #4A9FFF; color: #4A9FFF; }
+    .pill-active { border-color: #4A9FFF !important; color: #4A9FFF !important; }
+    .header-right { display: flex; align-items: center; gap: 12px; margin-left: auto; }
+    .backend-status { display: flex; align-items: center; gap: 6px; }
+    .status-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; transition: background 0.3s; }
+    .status-text { font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #3A4A5A; letter-spacing: 0.5px; }
+    .run-btn {
+      padding: 5px 14px;
+      background: transparent;
+      border: 1px solid #4A9FFF;
+      border-radius: 2px;
+      color: #4A9FFF;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 10px; font-weight: 400;
+      letter-spacing: 1.5px; text-transform: uppercase;
+      cursor: pointer; white-space: nowrap;
+      transition: background 0.15s, color 0.15s;
+    }
+    .run-btn:hover:not(:disabled) { background: #4A9FFF; color: #060B18; }
+    .run-btn:disabled { border-color: #18243A; color: #2E3E52; cursor: not-allowed; }
+
+    /* ── Main ───────────────────────────────────────────────────────── */
+    .main { max-width: 1440px; margin: 0 auto; padding: 20px 24px; }
+
+    /* ── Utility ────────────────────────────────────────────────────── */
+    .error-bar {
+      background: #0C0F18;
+      border: 1px solid #C84040;
+      border-left: 3px solid #C84040;
+      border-radius: 2px;
+      padding: 10px 14px; margin-bottom: 16px;
+      color: #C84040;
+      font-family: 'IBM Plex Mono', monospace; font-size: 11px;
+      white-space: pre-line;
+    }
+
+    /* ── Loading ────────────────────────────────────────────────────── */
+    .loading-wrap {
+      background: #080E1D; border: 1px solid #18243A; border-radius: 4px;
+      padding: 48px 32px;
+    }
+    .loading-header {
+      font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #4A5A72;
+      margin-bottom: 20px; letter-spacing: 0.5px;
+    }
+    .loading-line {
+      font-family: 'IBM Plex Mono', monospace; font-size: 12px;
+      color: #D0D8E8; margin-bottom: 4px;
+    }
+    .loading-tool-name { color: #00C896; }
+    .cursor {
+      display: inline-block;
+      width: 7px; height: 13px;
+      background: #00C896;
+      margin-left: 2px;
+      vertical-align: text-bottom;
+      animation: blink 1.1s step-end infinite;
+    }
+    .progress-track {
+      height: 1px; background: #18243A;
+      margin: 20px 0 16px; border-radius: 1px;
+    }
+    .progress-fill {
+      height: 1px; background: #00C896;
+      border-radius: 1px; transition: width 0.4s ease;
+    }
+    .step-log { display: flex; flex-direction: column; gap: 3px; margin-top: 16px; }
+    .step-log-item {
+      font-family: 'IBM Plex Mono', monospace; font-size: 10px;
+      color: #2E3E52; letter-spacing: 0.3px;
+    }
+    .step-log-item.active { color: #00C896; }
+    .step-log-item.done { color: #3A5A4A; }
+
+    /* ── Stock meta ─────────────────────────────────────────────────── */
+    .stock-meta {
+      display: flex; align-items: flex-start; gap: 20px;
+      margin-bottom: 12px; padding-bottom: 16px;
+      border-bottom: 1px solid #18243A;
+    }
+    .stock-name { font-size: 19px; font-weight: 500; letter-spacing: -0.3px; }
+    .stock-sub { font-size: 10px; color: #4A5A72; margin-top: 2px; letter-spacing: 0.5px; }
+    .last-updated { font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #2E3E52; margin-top: 4px; }
+    .price-group { display: flex; align-items: baseline; gap: 10px; margin-left: auto; }
+    .price {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 24px; font-weight: 500; letter-spacing: -0.5px;
+    }
+    .chg {
+      font-family: 'IBM Plex Mono', monospace;
+      padding: 2px 6px; border-radius: 2px;
+      font-size: 11px; font-weight: 400;
+    }
+    .chg-pos { background: rgba(0,200,150,0.1); color: #00C896; }
+    .chg-neg { background: rgba(200,64,64,0.1); color: #C84040; }
+    .mktcap { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #4A5A72; }
+    .live-badge {
+      padding: 3px 8px;
+      background: rgba(0,200,150,0.08); border: 1px solid rgba(0,200,150,0.25);
+      border-radius: 2px;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 9px; font-weight: 400; letter-spacing: 1.5px; color: #00C896;
+      text-transform: uppercase; align-self: center;
+    }
+
+    /* ── Price Context Strip ────────────────────────────────────────── */
+    .price-context-strip {
+      background: #080E1D;
+      border: 1px solid #18243A;
+      border-radius: 4px;
+      padding: 0 14px;
+      margin-bottom: 12px;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+    .price-context-label {
+      font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase;
+      color: #4A5A72; font-family: 'IBM Plex Mono', monospace;
+      white-space: nowrap; flex-shrink: 0;
+    }
+    /* ── Company overview two-zone ──────────────────────────────── */
+    .co-panel {
+      background: #080E1D;
+      border: 1px solid #18243A;
+      border-radius: 4px;
+      padding: 14px 18px;
+      margin-bottom: 12px;
+      display: flex;
+      gap: 20px;
+      align-items: stretch;
+    }
+    .co-left {
+      flex: 0 0 38%;
+      min-width: 220px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .co-right {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-width: 0;
+      border-left: 1px solid #111A2E;
+      padding-left: 20px;
+    }
+    .co-snapshot-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px 16px;
+    }
+    .co-snapshot-row {
+      display: flex;
+      flex-direction: column;
+    }
+    .co-snapshot-label {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 8px;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: #2E3E52;
+      margin-bottom: 1px;
+    }
+    .co-snapshot-val {
+      font-size: 11px;
+      color: #D0D8E8;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .co-model-line {
+      font-size: 11px;
+      color: #6872A4;
+      line-height: 1.6;
+    }
+    .co-moat-line {
+      font-size: 10px;
+      color: #4A5A72;
+      font-style: italic;
+      line-height: 1.5;
+    }
+    .co-pills-label {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 8px;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: #2E3E52;
+      margin-bottom: 3px;
+    }
+    .co-pills-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+    .co-product-pill {
+      padding: 2px 8px;
+      border-radius: 2px;
+      border: 1px solid #18243A;
+      background: #0A1220;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 9px;
+      color: #4A9FFF;
+      letter-spacing: 0.3px;
+      white-space: nowrap;
+    }
+    .co-competitor-pill {
+      padding: 2px 8px;
+      border-radius: 2px;
+      border: 1px solid #18243A;
+      background: #0A1220;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 9px;
+      color: #E8A838;
+      letter-spacing: 0.3px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: border-color 0.12s, background 0.12s;
+    }
+    .co-competitor-pill:hover {
+      border-color: #E8A838;
+      background: rgba(232,168,56,0.08);
+    }
+    .co-calendar-chip {
+      padding: 2px 8px;
+      border-radius: 2px;
+      border: 1px solid #18243A;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 9px;
+      color: #4A5A72;
+      background: transparent;
+      white-space: nowrap;
+    }
+
+    /* ── Comps table ────────────────────────────────────────────── */
+    .comps-section {
+      background: #080E1D;
+      border: 1px solid #18243A;
+      border-radius: 4px;
+      margin-bottom: 12px;
+      overflow: hidden;
+    }
+    .comps-table-wrap { overflow-x: auto; }
+    .comps-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11px;
+    }
+    .comps-table th {
+      padding: 6px 10px;
+      text-align: right;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 8px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: #2E3E52;
+      border-bottom: 1px solid #18243A;
+      white-space: nowrap;
+      font-weight: 400;
+      background: #060B18;
+    }
+    .comps-table th:first-child { text-align: left; position: sticky; left: 0; background: #060B18; z-index: 2; }
+    .comps-table td {
+      padding: 6px 10px;
+      vertical-align: middle;
+      border-bottom: 1px solid #0C1220;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px;
+      font-variant-numeric: tabular-nums;
+      text-align: right;
+      white-space: nowrap;
+    }
+    .comps-table tr:last-child td { border-bottom: none; }
+    .comps-table td:first-child {
+      text-align: left;
+      min-width: 160px;
+      position: sticky; left: 0;
+      background: #080E1D;
+      z-index: 1;
+    }
+    .comps-row-subject td { background: rgba(74,159,255,0.04); }
+    .comps-row-subject td:first-child { background: rgba(74,159,255,0.06); }
+    .comps-row-median td { color: #4A5A72; font-style: italic; }
+    .comps-row-etf td { color: #3A4A5A; font-size: 10px; }
+    .comps-ticker { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #D0D8E8; }
+    .comps-name { font-size: 10px; color: #4A5A72; max-width: 110px; overflow: hidden; text-overflow: ellipsis; }
+    .vs-badge {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 8px; letter-spacing: 0.3px;
+      padding: 1px 4px; border-radius: 2px;
+      margin-left: 3px; vertical-align: middle;
+    }
+    .vs-premium { color: #C84040; background: rgba(200,64,64,0.08); border: 1px solid rgba(200,64,64,0.2); }
+    .vs-discount { color: #00C896; background: rgba(0,200,150,0.08); border: 1px solid rgba(0,200,150,0.2); }
+    .comps-verdict {
+      padding: 8px 14px;
+      font-size: 11px; color: #6872A4; line-height: 1.55;
+      border-top: 1px solid #0C1220;
+    }
+
+    .price-range-bar-wrap {
+      flex: 1; max-width: 200px; position: relative;
+    }
+    .price-range-track {
+      height: 4px; background: #111A2E; border-radius: 2px; position: relative;
+    }
+    .price-range-fill {
+      position: absolute; left: 0; top: 0; height: 4px; border-radius: 2px;
+    }
+    .price-range-dot {
+      position: absolute; top: 50%; transform: translate(-50%, -50%);
+      width: 8px; height: 8px; border-radius: 50%; border: 1px solid #060B18;
+    }
+    .price-stat {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 10px; color: #8892A4;
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
+    .price-stat span { color: #4A5A72; margin-right: 3px; }
+
+    /* ── Macro strip ────────────────────────────────────────────────── */
+    .macro-strip {
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+      padding: 8px 14px; margin-bottom: 12px;
+      background: #080E1D; border: 1px solid #18243A; border-radius: 4px;
+    }
+    .macro-label { font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 1.5px; color: #2E3E52; text-transform: uppercase; margin-right: 4px; }
+    .macro-pill {
+      padding: 2px 8px; border-radius: 2px;
+      font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.5px;
+      border: 1px solid;
+    }
+    .macro-pill-green  { color: #00C896; border-color: rgba(0,200,150,0.25); background: rgba(0,200,150,0.06); }
+    .macro-pill-amber  { color: #E8A838; border-color: rgba(232,168,56,0.25); background: rgba(232,168,56,0.06); }
+    .macro-pill-red    { color: #C84040; border-color: rgba(200,64,64,0.25);  background: rgba(200,64,64,0.06);  }
+    .macro-pill-gray   { color: #4A5A72; border-color: #18243A; background: transparent; }
+    .macro-regime {
+      margin-left: auto;
+      font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 1px;
+    }
+
+    /* ── Source status panel ─────────────────────────────────────────── */
+    .source-grid { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 14px; }
+    .source-chip {
+      padding: 3px 9px; border-radius: 2px; border: 1px solid;
+      font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 0.5px;
+      cursor: default;
+    }
+    .source-chip-ok     { color: #3A8A6A; border-color: rgba(0,200,150,0.2); background: rgba(0,200,150,0.05); }
+    .source-chip-fail   { color: #6A3A3A; border-color: rgba(200,64,64,0.2); background: transparent; }
+    .source-chip-fetching { color: #4A5A72; border-color: #18243A; background: transparent; }
+    .source-headline {
+      font-size: 13px; color: #D0D8E8; padding: 10px 14px 0;
+      font-family: 'IBM Plex Sans', sans-serif;
+    }
+
+    /* ── Social feed panel ───────────────────────────────────────────── */
+    .social-post {
+      padding: 8px 10px; border-radius: 2px;
+      border: 1px solid #18243A;
+      border-left-width: 3px;
+      margin-bottom: 6px;
+    }
+    .social-post:last-child { margin-bottom: 0; }
+    .social-post-line1 { display: flex; align-items: center; justify-content: space-between; margin-bottom: 3px; }
+    .social-post-line3 { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
+    .social-source-tag {
+      font-family: 'IBM Plex Mono', monospace; font-size: 8px; letter-spacing: 1px;
+      padding: 1px 5px; border-radius: 2px; text-transform: uppercase;
+    }
+    .social-tag-reddit     { background: rgba(255,69,0,0.1);  color: #C87040; border: 1px solid rgba(255,69,0,0.2); }
+    .social-tag-stocktwits { background: rgba(74,159,255,0.1); color: #4A9FFF; border: 1px solid rgba(74,159,255,0.2); }
+    .social-sentiment-tag { font-family: 'IBM Plex Mono', monospace; font-size: 8px; letter-spacing: 0.5px; }
+    .social-post-body { font-size: 12px; color: #8892A4; line-height: 1.5; }
+    .social-meta { font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: #2E3E52; }
+    .social-filter-row {
+      display: flex; gap: 6px; padding: 10px 14px 6px;
+      border-bottom: 1px solid #111A2E;
+    }
+    .social-filter-btn {
+      font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 0.8px;
+      text-transform: uppercase; padding: 2px 8px; border-radius: 2px;
+      border: 1px solid #18243A; background: transparent; color: #4A5A72;
+      cursor: pointer; transition: border-color 0.12s, color 0.12s;
+    }
+    .social-filter-btn:hover { border-color: #4A9FFF; color: #4A9FFF; }
+    .social-filter-active { border-color: #4A9FFF !important; color: #4A9FFF !important; }
+
+    /* ── Score cards ────────────────────────────────────────────────── */
+    .score-row {
+      display: grid; grid-template-columns: repeat(4, 1fr);
+      gap: 12px; margin-bottom: 12px;
+    }
+    .score-card {
+      background: #080E1D; border: 1px solid #18243A; border-radius: 4px;
+      padding: 14px 18px;
+      display: flex; align-items: center; gap: 16px;
+    }
+    .ring-wrap { position: relative; flex-shrink: 0; width: 76px; height: 76px; }
+    .ring-wrap svg { display: block; }
+    .ring-num {
+      position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 20px; font-weight: 500; font-variant-numeric: tabular-nums;
+      pointer-events: none;
+    }
+    .card-label {
+      font-size: 9px; font-weight: 400; letter-spacing: 1.5px;
+      text-transform: uppercase; color: #4A5A72; margin-bottom: 5px;
+    }
+    .card-note { font-size: 11px; color: #4A5A72; line-height: 1.55; }
+
+    /* ── Behavioral signal banner ───────────────────────────────────── */
+    .signal-banner {
+      display: flex; align-items: center; gap: 20px;
+      padding: 14px 18px;
+      background: #080E1D;
+      border: 1px solid #18243A;
+      border-radius: 4px;
+      margin-bottom: 12px;
+    }
+    .signal-left { flex-shrink: 0; }
+    .signal-eyebrow { font-size: 9px; font-weight: 400; letter-spacing: 1.5px; color: #4A5A72; text-transform: uppercase; margin-bottom: 4px; }
+    .signal-state { font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-weight: 500; }
+    .signal-exp { font-size: 12px; flex: 1; line-height: 1.65; color: #8892A4; }
+    .verdict-pill {
+      padding: 4px 14px; border-radius: 2px; border: 1px solid;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 10px; font-weight: 400; letter-spacing: 2px; white-space: nowrap;
+      text-transform: uppercase;
+    }
+
+    /* ── Tier 2 two-column layout ───────────────────────────────────── */
+    .tier2 {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 16px; margin-bottom: 24px;
+    }
+    .tier2-panel {
+      height: 480px; overflow-y: auto;
+      background: #080E1D; border: 1px solid #18243A; border-radius: 4px;
+      overflow: hidden;
+    }
+    .tier2-panel-inner {
+      height: 100%; overflow-y: auto;
+    }
+    .tier2-panel-inner::-webkit-scrollbar { width: 4px; }
+    .tier2-panel-inner::-webkit-scrollbar-track { background: #060B18; }
+    .tier2-panel-inner::-webkit-scrollbar-thumb { background: #18243A; border-radius: 2px; }
+
+    /* ── Panel ─────────────────────────────────────────────────────── */
+    .panel { background: #080E1D; border: 1px solid #18243A; border-radius: 4px; overflow: hidden; }
+    .panel-head {
+      padding: 8px 14px; background: #060B18; border-bottom: 1px solid #18243A;
+      font-size: 9px; font-weight: 400; letter-spacing: 1.5px; text-transform: uppercase; color: #4A5A72;
+    }
+    .panel-body { padding: 12px 14px; }
+
+    /* ── Sector tile row ────────────────────────────────────────────── */
+    .sector-tile-row {
+      display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 14px;
+    }
+    .sector-tile {
+      background: #0A1220; border: 1px solid #18243A; border-radius: 4px;
+      padding: 12px 16px; min-width: 120px;
+    }
+    .sector-tile-label {
+      font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase;
+      color: #4A5A72; font-family: 'IBM Plex Mono', monospace;
+      margin-bottom: 6px;
+    }
+    .sector-tile-val {
+      font-family: 'IBM Plex Mono', monospace; font-size: 20px;
+      font-variant-numeric: tabular-nums;
+      display: flex; align-items: center; gap: 6px;
+    }
+
+    /* Claims */
+    .claim {
+      padding: 9px 11px;
+      border-radius: 2px;
+      border: 1px solid #18243A;
+      border-left-width: 3px;
+      margin-bottom: 7px; cursor: pointer;
+      transition: background 0.12s;
+    }
+    .claim:last-child { margin-bottom: 0; }
+    .claim:hover, .claim-open { background: rgba(255,255,255,0.02); }
+    .claim-row { display: flex; align-items: flex-start; gap: 10px; justify-content: space-between; }
+    .claim-text { font-size: 12px; color: #B0B8C8; line-height: 1.5; font-weight: 400; }
+    .vtag {
+      flex-shrink: 0; margin-top: 1px;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 9px; font-weight: 400; letter-spacing: 1px; text-transform: uppercase;
+    }
+    .v-sup { color: #00C896; }
+    .v-mis { color: #E8A838; }
+    .v-uns { color: #C84040; }
+    .claim-exp {
+      font-size: 11px; color: #6872A4; margin-top: 8px; line-height: 1.6;
+      padding-top: 8px; border-top: 1px solid #18243A;
+    }
+
+    /* Fundamentals table */
+    .ftable { width: 100%; border-collapse: collapse; }
+    .ftable tr { border-bottom: 1px solid #111A2E; }
+    .ftable tr:last-child { border-bottom: none; }
+    .ftable td { padding: 6px 4px; vertical-align: middle; }
+    .ft-key { color: #5A6A82; font-size: 11px; font-weight: 400; font-family: 'IBM Plex Sans', sans-serif; }
+    .ft-val {
+      font-family: 'IBM Plex Mono', monospace;
+      color: #D0D8E8; font-weight: 400; text-align: right;
+      font-variant-numeric: tabular-nums; font-size: 11px;
+      display: flex; align-items: center; justify-content: flex-end; gap: 5px;
+    }
+    .metric-dot {
+      display: inline-block; width: 5px; height: 5px;
+      border-radius: 50%; flex-shrink: 0;
+    }
+
+    /* ── Insider badge ───────────────────────────────────────────────── */
+    .insider-badge-wrap { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+    .insider-badge {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 9px; letter-spacing: 1px; text-transform: uppercase;
+      padding: 2px 7px; border-radius: 2px; border: 1px solid;
+    }
+    .insider-badge-green  { color: #00C896; border-color: rgba(0,200,150,0.3); background: rgba(0,200,150,0.06); }
+    .insider-badge-red    { color: #C84040; border-color: rgba(200,64,64,0.3);  background: rgba(200,64,64,0.06);  }
+    .insider-badge-amber  { color: #E8A838; border-color: rgba(232,168,56,0.3); background: rgba(232,168,56,0.06); }
+    .insider-badge-gray   { color: #4A5A72; border-color: #18243A; background: transparent; }
+    .insider-filing-count { font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: #2E3E52; }
+    .insider-name-pills { display: flex; flex-wrap: wrap; gap: 3px; justify-content: flex-end; }
+    .insider-name-pill {
+      font-family: 'IBM Plex Mono', monospace; font-size: 8px; color: #3A4A62;
+      padding: 1px 5px; border-radius: 2px; border: 1px solid #111A2E;
+      background: #060B18;
+    }
+
+    /* ── Verdict card ───────────────────────────────────────────────── */
+    .verdict-card {
+      position: relative;
+      padding: 16px 18px;
+      background: #080E1D; border: 1px solid #18243A; border-radius: 4px;
+      margin-bottom: 24px; border-left-width: 3px;
+    }
+    .verdict-action {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 28px; font-weight: 500; letter-spacing: -0.5px;
+      margin-bottom: 6px;
+    }
+    .verdict-subhead {
+      font-size: 13px; font-weight: 500; color: #D0D8E8;
+      margin-bottom: 8px; line-height: 1.4;
+    }
+    .verdict-body { font-size: 13px; color: #8892A4; line-height: 1.7; }
+    .verdict-confidence-pill {
+      position: absolute; top: 16px; right: 16px;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 9px; letter-spacing: 1px; text-transform: uppercase;
+      padding: 2px 8px; border-radius: 2px; border: 1px solid;
+    }
+
+    /* ── Collapsible panels ─────────────────────────────────────────── */
+    .collapsible-panel { background: #080E1D; border: 1px solid #18243A; border-radius: 4px; overflow: hidden; margin-bottom: 24px; }
+    .collapsible-toggle {
+      width: 100%; display: flex; justify-content: space-between; align-items: center;
+      padding: 9px 14px; background: #060B18; border: none; border-bottom: 1px solid #18243A;
+      color: #4A5A72; cursor: pointer;
+      font: 400 9px/1 'IBM Plex Mono', monospace; letter-spacing: 1.5px; text-transform: uppercase;
+      transition: color 0.12s;
+    }
+    .collapsible-toggle:hover { color: #D0D8E8; }
+    .collapsible-body { padding: 0; }
+
+    /* ── Macro sensitivity rows ─────────────────────────────────────── */
+    .macro-sens-verdict {
+      padding: 10px 14px; border-bottom: 1px solid #111A2E;
+      font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #4A5A72;
+      letter-spacing: 0.5px;
+    }
+    .macro-sens-row {
+      display: grid; grid-template-columns: 120px 80px 1fr;
+      align-items: center; gap: 12px;
+      padding: 8px 14px; border-bottom: 1px solid #111A2E;
+    }
+    .macro-sens-row:last-child { border-bottom: none; }
+    .macro-sens-name { font-size: 11px; color: #5A6A82; font-family: 'IBM Plex Sans', sans-serif; }
+    .macro-sens-badge {
+      font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 1px;
+      text-transform: uppercase; padding: 2px 7px; border-radius: 2px; border: 1px solid;
+      text-align: center;
+    }
+    .macro-sens-headline {
+      font-size: 11px; color: #8892A4; line-height: 1.5;
+    }
+    .tooltip-wrap { position: relative; }
+    .tooltip-wrap:hover .tooltip-box { display: block; }
+    .tooltip-box {
+      display: none; position: absolute; z-index: 50;
+      bottom: calc(100% + 4px); left: 0;
+      background: #0C1628; border: 1px solid #18243A; border-radius: 4px;
+      padding: 10px 12px; font-size: 11px; line-height: 1.6; color: #8892A4;
+      width: 320px; pointer-events: none;
+    }
+
+    /* ── Valuation intelligence panel ───────────────────────────────── */
+    .val-table { width: 100%; border-collapse: collapse; }
+    .val-table tr { border-bottom: 1px solid #111A2E; }
+    .val-table tr:last-child { border-bottom: none; }
+    .val-table td { padding: 7px 14px; vertical-align: middle; font-family: 'IBM Plex Sans', sans-serif; }
+    .val-key { color: #5A6A82; font-size: 11px; }
+    .val-val {
+      font-family: 'IBM Plex Mono', monospace; font-size: 11px;
+      color: #D0D8E8; text-align: right; font-variant-numeric: tabular-nums;
+      display: flex; align-items: center; justify-content: flex-end; gap: 5px;
+    }
+    .val-note {
+      font-size: 10px; color: #4A5A72; padding: 6px 14px 8px;
+      line-height: 1.55; font-family: 'IBM Plex Sans', sans-serif;
+    }
+
+    /* ── Reasoning trace ────────────────────────────────────────────── */
+    .trace-wrap { background: #080E1D; border: 1px solid #18243A; border-radius: 4px; overflow: hidden; margin-bottom: 24px; }
+    .trace-toggle {
+      width: 100%; display: flex; justify-content: space-between; align-items: center;
+      padding: 9px 14px; background: none; border: none;
+      color: #4A5A72; cursor: pointer;
+      font: 400 9px/1 'IBM Plex Mono', monospace; letter-spacing: 1.5px; text-transform: uppercase;
+      transition: color 0.12s;
+    }
+    .trace-toggle:hover { color: #D0D8E8; }
+    .trace-summary {
+      padding: 10px 18px 6px;
+      font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #3A4A5A;
+      border-top: 1px solid #18243A;
+      background: #060B18;
+    }
+    .trace-body {
+      padding: 12px 18px 18px; background: #060B18;
+    }
+    .trace-step {
+      margin-bottom: 10px; padding-bottom: 10px;
+      border-bottom: 1px solid #0C1220;
+    }
+    .trace-step:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
+    .trace-step-header {
+      display: flex; align-items: center; gap: 8px; cursor: pointer;
+      margin-bottom: 4px;
+    }
+    .ts-num {
+      font-family: 'IBM Plex Mono', monospace; font-size: 10px;
+      color: #2E3E52; flex-shrink: 0;
+    }
+    .ts-tool-pill {
+      font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 0.5px;
+      padding: 1px 6px; border-radius: 2px; border: 1px solid;
+      flex-shrink: 0;
+    }
+    .ts-summary {
+      font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #4A5A72;
+      flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .ts-expand-btn {
+      font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: #2E3E52;
+      flex-shrink: 0;
+    }
+    .ts-out { font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #6872A4; margin: 3px 0 3px 0; line-height: 1.5; }
+    .ts-reason { font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #3A4A62; font-style: italic; line-height: 1.5; }
+
+    /* ── Data note ──────────────────────────────────────────────────── */
+    .data-note { font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: #1E2E40; text-align: center; padding: 8px; letter-spacing: 0.5px; margin-top: 8px; }
+
+    /* ── Empty state ────────────────────────────────────────────────── */
+    .empty-state { text-align: center; padding: 100px 24px; }
+    .empty-title { font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #2E3E52; margin-bottom: 8px; letter-spacing: 0.5px; }
+    .empty-sub { font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #1E2A38; letter-spacing: 0.3px; }
+
+    /* ── Animations ─────────────────────────────────────────────────── */
+    @keyframes blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(12px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .fade-up { animation: fadeUp 0.35s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+    /* ── Tab navigation ─────────────────────────────────────────────────── */
+    .tab-nav {
+      display: flex; gap: 0; margin-bottom: 16px;
+      border-bottom: 1px solid #18243A;
+    }
+    .tab-btn {
+      padding: 8px 20px;
+      background: transparent; border: none; border-bottom: 2px solid transparent;
+      font-family: 'IBM Plex Mono', monospace; font-size: 10px;
+      letter-spacing: 1.5px; text-transform: uppercase;
+      color: #3A4A5A; cursor: pointer;
+      transition: color 0.12s, border-color 0.12s;
+      margin-bottom: -1px;
+    }
+    .tab-btn:hover { color: #8892A4; }
+    .tab-btn-active { color: #D0D8E8 !important; border-bottom-color: #4A9FFF !important; }
+
+    /* ── Predict tab layout ──────────────────────────────────────────────── */
+    .predict-grid {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 16px; margin-bottom: 16px;
+    }
+    .predict-section {
+      background: #080E1D; border: 1px solid #18243A; border-radius: 4px; overflow: hidden;
+    }
+    .predict-section-full {
+      background: #080E1D; border: 1px solid #18243A; border-radius: 4px;
+      overflow: hidden; margin-bottom: 16px;
+    }
+    .predict-head {
+      padding: 10px 16px; background: #060B18; border-bottom: 1px solid #18243A;
+    }
+    .predict-title { font-family: 'IBM Plex Sans', sans-serif; font-size: 12px; font-weight: 500; color: #D0D8E8; }
+    .predict-subtitle { font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: #2E3E52; letter-spacing: 0.3px; margin-top: 2px; }
+    .predict-body { padding: 14px 16px; }
+    .predict-loading { padding: 40px 16px; text-align: center; font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #2E3E52; letter-spacing: 0.5px; }
+    .predict-error { padding: 16px; font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #4A3A3A; letter-spacing: 0.3px; }
+
+    /* Factor attribution */
+    .factor-r2 { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #4A9FFF; margin-bottom: 10px; }
+    .factor-chart-wrap { height: 210px; position: relative; }
+    .conditions-table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    .conditions-table tr { border-bottom: 1px solid #0C1220; }
+    .conditions-table tr:last-child { border-bottom: none; }
+    .conditions-table td { padding: 5px 4px; vertical-align: middle; font-size: 10px; }
+    .cond-factor { color: #5A6A82; }
+    .cond-prank  { font-family: 'IBM Plex Mono', monospace; color: #4A5A72; text-align: center; font-size: 9px; }
+    .cond-signal { font-family: 'IBM Plex Mono', monospace; font-size: 8px; letter-spacing: 0.8px; text-align: right; text-transform: uppercase; }
+
+    /* Earnings gauge */
+    .gauge-wrap { position: relative; width: 160px; height: 90px; margin: 0 auto 6px; }
+    .gauge-score { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); font-family: 'IBM Plex Mono', monospace; font-size: 28px; font-weight: 500; }
+    .earnings-countdown { text-align: center; margin-bottom: 10px; font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #4A5A72; }
+    .pulse-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #E8A838; margin-right: 4px; vertical-align: middle; animation: pulse 1.5s ease-in-out infinite; }
+    @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(.8)} }
+    .sub-score-row { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
+    .sub-score-label { font-size: 10px; color: #5A6A82; flex: 1; }
+    .sub-score-track { flex: 1; height: 3px; background: #111A2E; border-radius: 2px; }
+    .sub-score-fill  { height: 3px; border-radius: 2px; transition: width 0.6s ease; }
+    .sub-score-val   { font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: #4A5A72; width: 24px; text-align: right; }
+    .earnings-history-wrap { height: 80px; position: relative; margin-top: 12px; }
+
+    /* Scenario range */
+    .pwtarget-label { font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: #4A5A72; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 2px; text-align: center; }
+    .pwtarget-value { font-family: 'IBM Plex Mono', monospace; font-size: 22px; font-weight: 500; color: #D0D8E8; text-align: center; margin-bottom: 14px; }
+    .scenario-range-axis { position: relative; height: 60px; margin: 0 20px 4px; }
+    .scenario-gradient-bar { position: absolute; top: 20px; left: 0; right: 0; height: 5px; border-radius: 3px; background: linear-gradient(to right, #C84040, #E8A838 40%, #00C896); }
+    .scenario-dot { position: absolute; top: 12px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; }
+    .scenario-dot-circle { width: 10px; height: 10px; border-radius: 50%; border: 2px solid #060B18; z-index: 2; }
+    .scenario-dot-label { font-family: 'IBM Plex Mono', monospace; font-size: 7px; color: #4A5A72; margin-top: 14px; white-space: nowrap; }
+    .scenario-dot-ret   { font-family: 'IBM Plex Mono', monospace; font-size: 8px; margin-top: 1px; white-space: nowrap; }
+    .scenario-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 16px; }
+    .scenario-card { background: #060B18; border: 1px solid #18243A; border-radius: 4px; padding: 10px 12px; }
+    .sc-name   { font-family: 'IBM Plex Mono', monospace; font-size: 8px; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 4px; }
+    .sc-price  { font-family: 'IBM Plex Mono', monospace; font-size: 18px; font-weight: 500; margin-bottom: 2px; }
+    .sc-ret    { font-family: 'IBM Plex Mono', monospace; font-size: 10px; margin-bottom: 6px; }
+    .sc-driver { font-size: 10px; color: #3A4A5A; line-height: 1.5; }
+    .scenario-weights { margin-top: 14px; padding-top: 12px; border-top: 1px solid #111A2E; }
+    .weights-label { font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: #2E3E52; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 8px; }
+    .weight-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .weight-name { font-size: 10px; color: #5A6A82; width: 40px; }
+    .weight-slider { flex: 1; height: 2px; cursor: pointer; accent-color: #4A9FFF; }
+    .weight-pct  { font-family: 'IBM Plex Mono', monospace; font-size: 9px; color: #4A5A72; width: 28px; text-align: right; }
+
+    /* Sentiment mean reversion */
+    .sentiment-signal-banner { padding: 8px 12px; border-radius: 3px; margin-bottom: 12px; font-size: 11px; line-height: 1.5; border-left: 3px solid; }
+    .sent-elevated { border-left-color: #C84040; background: rgba(200,64,64,0.05); color: #C84040; }
+    .sent-depressed { border-left-color: #00C896; background: rgba(0,200,150,0.05); color: #00C896; }
+    .sent-neutral   { border-left-color: #4A5A72; background: transparent; color: #4A5A72; }
+    .sentiment-chart-wrap { height: 180px; position: relative; }
+    .sentiment-corr { margin-top: 10px; padding: 8px 10px; background: #060B18; border: 1px solid #111A2E; border-radius: 3px; font-size: 10px; color: #4A5A72; line-height: 1.55; }
+    .corr-validated { color: #4A9FFF; }
+
+    /* ── Model Confidence Panel ─────────────────────────────────────── */
+    .confidence-panel {
+      background: #07101F;
+      border: 1px solid #18243A;
+      border-radius: 4px;
+      padding: 14px 16px;
+      margin-bottom: 18px;
+    }
+    .confidence-header {
+      display: flex; align-items: center; gap: 10px; margin-bottom: 12px;
+    }
+    .confidence-tier-badge {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 10px; font-weight: 500; letter-spacing: 1.5px;
+      padding: 3px 9px; border-radius: 2px;
+    }
+    .confidence-tier-high    { background: rgba(0,200,150,0.12); color: #00C896; border: 1px solid rgba(0,200,150,0.25); }
+    .confidence-tier-medium  { background: rgba(232,168,56,0.12); color: #E8A838; border: 1px solid rgba(232,168,56,0.25); }
+    .confidence-tier-low     { background: rgba(200,100,40,0.12); color: #E87028; border: 1px solid rgba(200,100,40,0.25); }
+    .confidence-tier-unvalidated { background: rgba(74,90,114,0.15); color: #4A5A72; border: 1px solid #18243A; }
+    .confidence-note {
+      font-size: 10px; color: #4A5A72; line-height: 1.55; margin-bottom: 12px;
+    }
+    .confidence-models { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .confidence-model-card {
+      background: #060B18;
+      border: 1px solid #111A2E;
+      border-radius: 3px;
+      padding: 10px 12px;
+    }
+    .cm-header { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; }
+    .cm-light {
+      width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+    }
+    .cm-light-pass       { background: #00C896; box-shadow: 0 0 5px rgba(0,200,150,0.5); }
+    .cm-light-fail       { background: #C84040; box-shadow: 0 0 5px rgba(200,64,64,0.35); }
+    .cm-light-data-gate  { background: #4A5A72; }
+    .cm-label { font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #8090A8; letter-spacing: 0.5px; }
+    .cm-status { font-size: 9px; font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.8px; margin-bottom: 5px; }
+    .cm-status-pass      { color: #00C896; }
+    .cm-status-fail      { color: #C84040; }
+    .cm-status-data-gate { color: #4A5A72; }
+    .cm-metrics { display: flex; flex-direction: column; gap: 2px; }
+    .cm-metric { font-size: 9px; color: #3A4A5A; font-family: 'IBM Plex Mono', monospace; }
+    .cm-metric span { color: #6A7A8A; }
+    .cm-message { font-size: 9px; color: #2E3E52; line-height: 1.45; margin-top: 5px; }
+    .confidence-validate-btn {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 9px; letter-spacing: 0.8px;
+      padding: 3px 10px;
+      background: transparent;
+      border: 1px solid #18243A;
+      color: #3A4A5A;
+      border-radius: 2px;
+      cursor: pointer;
+      transition: border-color 0.12s, color 0.12s;
+    }
+    .confidence-validate-btn:hover { border-color: #4A9FFF; color: #4A9FFF; }
+    .confidence-validate-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .confidence-disclaimer {
+      margin-top: 10px;
+      font-size: 9px; color: #1E2A38; line-height: 1.5;
+      border-top: 1px solid #0C1520;
+      padding-top: 8px;
+    }
+    .ci-note { font-size: 9px; color: #2E3E52; font-family: 'IBM Plex Mono', monospace; margin-top: 2px; }
+
+    /* ── Mobile breakpoint ──────────────────────────────────────────── */
+    @media (max-width: 960px) {
+      .tier2 { grid-template-columns: 1fr; }
+      .tier2-panel { height: auto; max-height: 420px; }
+      .score-row { grid-template-columns: repeat(2, 1fr); }
+      .header { flex-wrap: wrap; gap: 8px; }
+      .sector-tile-row { flex-wrap: wrap; }
+      .predict-grid { grid-template-columns: 1fr; }
+      .scenario-cards { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    // ── Constants ──────────────────────────────────────────────────────────────
+    const TICKERS = ['NVDA', 'AAPL', 'TSLA', 'MSFT', 'JNJ', 'JPM', 'HD', 'XOM'];
+
+    const SIGNAL_CONFIG = {
+      'Peak Euphoria': { color: '#C84040' },
+      'Distribution':  { color: '#E8A838' },
+      'Accumulation':  { color: '#00C896' },
+      'Capitulation':  { color: '#E8A838' },
+      'Recovery':      { color: '#4A9FFF' },
+      'Aligned':       { color: '#00C896' },
+    };
+
+    const VERDICT_CONFIG = {
+      'ACCUMULATE': { color: '#00C896', border: 'rgba(0,200,150,0.35)'  },
+      'HOLD':       { color: '#4A9FFF', border: 'rgba(74,159,255,0.35)' },
+      'TRIM':       { color: '#E8A838', border: 'rgba(232,168,56,0.35)' },
+      'AVOID':      { color: '#C84040', border: 'rgba(200,64,64,0.35)'  },
+    };
+
+    const CLAIM_COLORS = {
+      Supported:   '#00C896',
+      Misleading:  '#E8A838',
+      Unsupported: '#C84040',
+    };
+
+    const TOOL_CATEGORIES = {
+      data: ['get_stock_price','get_company_info','get_financial_data','get_sector_profile','get_news_sentiment','get_earnings_surprise','get_pipeline_value','get_patent_cliff','get_net_interest_margin','get_loan_loss_provisions','get_efficiency_ratio','get_same_store_sales','get_inventory_turns','get_gross_margin_by_channel','get_break_even_price','get_reserve_replacement','get_ffo','get_cap_rate','get_book_to_bill','get_capacity_utilization'],
+      analysis: ['get_macro_sensitivity','get_insider_activity','get_dcf_implied_growth','get_dilution_rate','get_net_revenue_retention','get_fda_catalyst_risk','get_reddit_sentiment'],
+      behavioral: ['get_sector_behavioral_biases'],
+      synthesis: ['claude_synthesis'],
+    };
+    const TOOL_CATEGORY_COLORS = {
+      data:       { color: '#4A9FFF', border: 'rgba(74,159,255,0.3)',  bg: 'rgba(74,159,255,0.06)'  },
+      analysis:   { color: '#00C896', border: 'rgba(0,200,150,0.3)',   bg: 'rgba(0,200,150,0.06)'   },
+      behavioral: { color: '#E8A838', border: 'rgba(232,168,56,0.3)',  bg: 'rgba(232,168,56,0.06)'  },
+      synthesis:  { color: '#9B59B6', border: 'rgba(155,89,182,0.3)',  bg: 'rgba(155,89,182,0.06)'  },
+      parallel:   { color: '#3A8A7A', border: 'rgba(58,138,122,0.3)',  bg: 'rgba(58,138,122,0.06)'  },
+    };
+
+    // ── Helpers ────────────────────────────────────────────────────────────────
+    function scoreColor(v) {
+      return v >= 70 ? '#00C896' : v >= 40 ? '#E8A838' : '#C84040';
+    }
+
+    function fmt(v, suffix = '') {
+      if (v === null || v === undefined || v === '') return '—';
+      return `${v}${suffix}`;
+    }
+
+    function getToolCategory(toolName) {
+      for (const [cat, tools] of Object.entries(TOOL_CATEGORIES)) {
+        if (tools.includes(toolName)) return cat;
+      }
+      return 'data';
+    }
+
+    function parseMacroSeverity(text) {
+      if (!text) return 'LOW';
+      const lower = text.toLowerCase();
+      const numMatch = text.match(/[-+]?(\d+(?:\.\d+)?)/);
+      if (numMatch) {
+        const n = Math.abs(parseFloat(numMatch[1]));
+        if (n >= 7) return 'HIGH';
+        if (n >= 4) return 'MEDIUM';
+        return 'LOW';
+      }
+      if (lower.includes('very high') || lower.includes('very strong')) return 'HIGH';
+      if (lower.includes('high') || lower.includes('significant') || lower.includes('substantial')) return 'HIGH';
+      if (lower.includes('moderate') || lower.includes('medium') || lower.includes('mixed')) return 'MEDIUM';
+      return 'LOW';
+    }
+
+    function isMacroHeadwind(text) {
+      if (!text) return false;
+      const lower = text.toLowerCase();
+      return lower.includes('headwind') || lower.includes('negative') || lower.includes('pressure') || lower.includes('drag') || lower.includes('risk');
+    }
+
+    function truncateWords(text, maxWords) {
+      if (!text) return '';
+      const words = text.trim().split(/\s+/);
+      if (words.length <= maxWords) return text.trim();
+      return words.slice(0, maxWords).join(' ') + '…';
+    }
+
+    // ── MetricFlag ─────────────────────────────────────────────────────────────
+    function MetricFlag({ label, value }) {
+      if (value === null || value === undefined || value === '') return null;
+      const n = parseFloat(value);
+      if (isNaN(n)) return null;
+
+      let color = null;
+      switch (label) {
+        case 'P/E (TTM)':
+          color = n > 150 ? '#C84040' : n > 80 ? '#E8A838' : n < 0 ? '#C84040' : null; break;
+        case 'Forward P/E':
+          color = n > 50 ? '#E8A838' : n < 0 ? '#C84040' : null; break;
+        case 'Revenue Growth':
+          color = n < 0 ? '#C84040' : n >= 25 ? '#00C896' : null; break;
+        case 'Gross Margin':
+          color = n < 20 ? '#C84040' : n >= 65 ? '#00C896' : null; break;
+        case 'FCF Margin':
+          color = n < 0 ? '#C84040' : n >= 20 ? '#00C896' : null; break;
+        case 'Short Interest':
+          color = n > 20 ? '#C84040' : n > 10 ? '#E8A838' : null; break;
+        case 'Rule of 40':
+          color = n < 0 ? '#C84040' : n >= 50 ? '#00C896' : null; break;
+        case 'EV/Revenue':
+          color = n > 20 ? '#E8A838' : null; break;
+        case 'Implied 10Y CAGR':
+          color = n > 30 ? '#C84040' : n > 20 ? '#E8A838' : n <= 10 ? '#00C896' : null; break;
+        case 'DCF Gap':
+          color = n > 15 ? '#C84040' : n > 5 ? '#E8A838' : n <= 0 ? '#00C896' : null; break;
+        case 'SBC / Revenue':
+          color = n > 20 ? '#C84040' : n > 10 ? '#E8A838' : n < 5 ? '#00C896' : null; break;
+        case 'SBC-Adj FCF Margin':
+          color = n < 0 ? '#C84040' : n >= 15 ? '#00C896' : null; break;
+        case 'Share Count Growth':
+          color = n > 3 ? '#C84040' : n > 1 ? '#E8A838' : n < 0 ? '#00C896' : null; break;
+        case 'NRR Estimate':
+          color = n < 100 ? '#C84040' : n < 110 ? '#E8A838' : n >= 120 ? '#00C896' : null; break;
+        default: color = null;
+      }
+
+      if (!color) return null;
+      return <span className="metric-dot" style={{ background: color }} />;
+    }
+
+    // ── ScoreRing ──────────────────────────────────────────────────────────────
+    function ScoreRing({ score }) {
+      const [visible, setVisible] = useState(false);
+      useEffect(() => {
+        const id = requestAnimationFrame(() => setVisible(true));
+        return () => cancelAnimationFrame(id);
+      }, []);
+
+      const R = 28;
+      const CIRC = 2 * Math.PI * R;
+      const offset = visible ? CIRC * (1 - Math.min(Math.max(score, 0), 100) / 100) : CIRC;
+      const color = scoreColor(score);
+
+      return (
+        <div className="ring-wrap">
+          <svg width="76" height="76" viewBox="0 0 72 72" style={{ display: 'block', transform: 'rotate(-90deg)' }}>
+            <circle cx="36" cy="36" r={R} fill="none" stroke="#141F33" strokeWidth="4" />
+            <circle
+              cx="36" cy="36" r={R}
+              fill="none" stroke={color} strokeWidth="4" strokeLinecap="round"
+              strokeDasharray={CIRC} strokeDashoffset={offset}
+              style={{ transition: 'stroke-dashoffset 1.1s cubic-bezier(0.34, 1.56, 0.64, 1)' }}
+            />
+          </svg>
+          <div className="ring-num" style={{ color }}>{score}</div>
+        </div>
+      );
+    }
+
+    // ── ScoreCard ──────────────────────────────────────────────────────────────
+    function ScoreCard({ score, label, note }) {
+      return (
+        <div className="score-card">
+          <ScoreRing score={score} />
+          <div>
+            <div className="card-label">{label}</div>
+            <div className="card-note">{note}</div>
+          </div>
+        </div>
+      );
+    }
+
+    // ── Claim ──────────────────────────────────────────────────────────────────
+    function Claim({ item, expanded, onToggle }) {
+      const borderColor = CLAIM_COLORS[item.verdict] || '#3A4A5A';
+      return (
+        <div
+          className={`claim${expanded ? ' claim-open' : ''}`}
+          onClick={onToggle}
+          style={{ borderLeftColor: borderColor, borderColor: '#18243A', borderLeftColor: borderColor }}
+        >
+          <div className="claim-row">
+            <span className="claim-text">{item.claim}</span>
+            <span className={`vtag v-${item.verdict === 'Supported' ? 'sup' : item.verdict === 'Misleading' ? 'mis' : 'uns'}`}>
+              {item.verdict}
+            </span>
+          </div>
+          {expanded && <div className="claim-exp">{item.explanation}</div>}
+        </div>
+      );
+    }
+
+    // ── CollapsiblePanel ───────────────────────────────────────────────────────
+    function CollapsiblePanel({ title, defaultOpen = true, children }) {
+      const [open, setOpen] = useState(defaultOpen && window.innerWidth > 960);
+      return (
+        <div className="collapsible-panel" style={{ marginBottom: 24 }}>
+          <button className="collapsible-toggle" onClick={() => setOpen(o => !o)}>
+            <span>{title}</span>
+            <span>{open ? '▲' : '▼'}</span>
+          </button>
+          {open && <div className="collapsible-body">{children}</div>}
+        </div>
+      );
+    }
+
+    // ── InsiderBadge ───────────────────────────────────────────────────────────
+    function InsiderBadge({ insiderDeep, insiderActivityStr }) {
+      const signal = insiderDeep?.open_insider_signal;
+      const edgarW = insiderDeep?.edgar_weighted_signal;
+      const clusterBuy = insiderDeep?.cluster_buy;
+
+      // Parse filing count from string e.g. "12 filings (90d)"
+      let filingCount = null;
+      if (insiderActivityStr) {
+        const m = insiderActivityStr.match(/(\d+)\s+filing/i);
+        if (m) filingCount = parseInt(m[1], 10);
+      }
+
+      let label, cls;
+      if (clusterBuy) {
+        label = 'CLUSTER BUY'; cls = 'insider-badge-green';
+      } else if (signal === 'net_buying' || (edgarW != null && edgarW > 1)) {
+        label = 'NET BUYING'; cls = 'insider-badge-green';
+      } else if (signal === 'net_selling' || (edgarW != null && edgarW < -0.5)) {
+        label = 'NET SELLING'; cls = 'insider-badge-red';
+      } else if (filingCount != null && filingCount > 10) {
+        label = 'ELEVATED ACTIVITY'; cls = 'insider-badge-amber';
+      } else {
+        label = 'MINIMAL'; cls = 'insider-badge-gray';
+      }
+
+      const recentTx = insiderDeep?.recent_transactions || [];
+      const topNames = recentTx.slice(0, 3).map(tx => tx.name || tx.insider_name).filter(Boolean);
+
+      return (
+        <div className="insider-badge-wrap">
+          <span className={`insider-badge ${cls}`}>{label}</span>
+          {filingCount != null && (
+            <span className="insider-filing-count">{filingCount} filings · 90d</span>
+          )}
+          {topNames.length > 0 && (
+            <div className="insider-name-pills">
+              {topNames.map((n, i) => (
+                <span key={i} className="insider-name-pill">{n}</span>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ── CompsTable ─────────────────────────────────────────────────────────────
+    const COMPS_COLS = [
+      { key: 'market_cap_b',       label: 'Mkt Cap $B', fmt: v => v != null ? v.toFixed(1) : '—' },
+      { key: 'revenue_growth_pct', label: 'Rev Grw %',  fmt: v => v != null ? `${v > 0 ? '+' : ''}${v}%` : '—' },
+      { key: 'gross_margin_pct',   label: 'Gross Mgn',  fmt: v => v != null ? `${v}%` : '—' },
+      { key: 'ev_revenue',         label: 'EV/Rev',     fmt: v => v != null ? `${v}×` : '—' },
+      { key: 'ev_ebitda',          label: 'EV/EBITDA',  fmt: v => v != null ? `${v}×` : 'N/M' },
+      { key: 'forward_pe',         label: 'Fwd P/E',    fmt: v => v != null ? `${v}×` : 'N/M' },
+      { key: 'analyst_target',     label: 'Target $',   fmt: v => v != null ? `$${v}` : '—' },
+    ];
+
+    function heatColor(val, min, max, lowerIsBetter) {
+      if (val == null || min == null || max == null || max === min) return null;
+      let t = (val - min) / (max - min);  // 0=min, 1=max
+      if (lowerIsBetter) t = 1 - t;       // flip so high=good
+      // t=1 → green tint, t=0 → red tint, middle → transparent
+      if (t >= 0.7) return 'rgba(0,200,150,0.10)';
+      if (t <= 0.3) return 'rgba(200,64,64,0.10)';
+      return null;
+    }
+
+    function CompsTable({ data, onCompetitorClick }) {
+      if (!data) return null;
+      const { rows = [], median, col_ranges = {}, lower_is_better = [] } = data;
+      const subject = rows.find(r => r.is_subject);
+
+      return (
+        <div className="comps-section">
+          <div className="panel-head" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span>Relative Valuation — Peer Comparison</span>
+            {data.etf_ticker && (
+              <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 9, color: '#2E3E52', letterSpacing: 0.5 }}>
+                benchmark: {data.etf_ticker}
+              </span>
+            )}
+          </div>
+          <div className="comps-table-wrap">
+            <table className="comps-table">
+              <thead>
+                <tr>
+                  <th>Company</th>
+                  {COMPS_COLS.map(c => <th key={c.key}>{c.label}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, ri) => {
+                  const rowClass = row.is_subject ? 'comps-row-subject' : row.is_etf ? 'comps-row-etf' : '';
+                  return (
+                    <tr key={ri} className={rowClass}>
+                      <td>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                          <span className="comps-ticker">{row.ticker}</span>
+                          <span className="comps-name">{row.name}</span>
+                        </div>
+                      </td>
+                      {COMPS_COLS.map(col => {
+                        const val = row[col.key];
+                        const range = col_ranges[col.key];
+                        const isLower = lower_is_better.includes(col.key);
+                        const bg = !row.is_subject && !row.is_etf && range
+                          ? heatColor(val, range.min, range.max, isLower)
+                          : null;
+                        const vsKey = `${col.key}_vs_median_pct`;
+                        const vsPct = row.is_subject ? row[vsKey] : null;
+                        // Premium = paying more than peers (bad for lower-is-better, good otherwise)
+                        const isPremium = vsPct != null && (isLower ? vsPct > 0 : vsPct > 0);
+                        return (
+                          <td key={col.key} style={bg ? { background: bg } : {}}>
+                            {col.fmt(val)}
+                            {vsPct != null && (
+                              <span className={`vs-badge ${isPremium ? 'vs-premium' : 'vs-discount'}`}>
+                                {vsPct > 0 ? '+' : ''}{vsPct}%
+                              </span>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+                {median && (
+                  <tr className="comps-row-median">
+                    <td>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                        <span className="comps-ticker" style={{ color: '#4A5A72' }}>MEDIAN</span>
+                        <span className="comps-name">Peer Median</span>
+                      </div>
+                    </td>
+                    {COMPS_COLS.map(col => (
+                      <td key={col.key}>{col.fmt(median[col.key])}</td>
+                    ))}
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          {data.verdict && <div className="comps-verdict">{data.verdict}</div>}
+        </div>
+      );
+    }
+
+    // ── Chart.js helpers ───────────────────────────────────────────────────────
+    function useChart(canvasRef, buildConfig, deps) {
+      const chartRef = useRef(null);
+      useEffect(() => {
+        if (!canvasRef.current || !window.Chart) return;
+        if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; }
+        if (!deps[0]) return;  // first dep is the data guard
+        try {
+          chartRef.current = new Chart(canvasRef.current, buildConfig());
+        } catch(e) { console.warn('Chart build error:', e); }
+        return () => { if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; } };
+      }, deps);
+    }
+
+    // ── FactorChart ────────────────────────────────────────────────────────────
+    function FactorChart({ data }) {
+      const canvasRef = useRef(null);
+      useChart(canvasRef, () => {
+        const factors = data.factors || [];
+        const labels = factors.map(f => f.label);
+        const coefs  = factors.map(f => f.coefficient);
+        const colors = coefs.map(c => c > 0 ? 'rgba(0,200,150,0.7)' : 'rgba(200,64,64,0.7)');
+        const borderColors = coefs.map(c => c > 0 ? '#00C896' : '#C84040');
+        return {
+          type: 'bar',
+          data: {
+            labels,
+            datasets: [{
+              data: coefs,
+              backgroundColor: colors,
+              borderColor: borderColors,
+              borderWidth: 1,
+            }],
+          },
+          options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  label: ctx => {
+                    const f = factors[ctx.dataIndex];
+                    return `coef: ${ctx.parsed.x.toFixed(4)}  p=${f.p_value.toFixed(3)}${f.significant ? '' : ' (n.s.)'}`;
+                  }
+                }
+              },
+              annotation: {
+                annotations: {
+                  zeroLine: { type: 'line', x: 0, borderColor: 'rgba(255,255,255,0.15)', borderWidth: 1 }
+                }
+              }
+            },
+            scales: {
+              x: {
+                grid: { color: 'rgba(255,255,255,0.04)' },
+                ticks: { color: '#4A5A72', font: { family: "'IBM Plex Mono', monospace", size: 9 } },
+              },
+              y: {
+                grid: { display: false },
+                ticks: { color: '#8892A4', font: { family: "'IBM Plex Sans', sans-serif", size: 10 } },
+              },
+            },
+          },
+        };
+      }, [data]);
+
+      return (
+        <div>
+          <div className="factor-r2">Model explains {data.r_squared_pct}% of historical price variance  ·  n={data.n_weeks}w  ·  {data.sector_etf}</div>
+          <div className="factor-chart-wrap">
+            <canvas ref={canvasRef} />
+          </div>
+          {data.current_conditions && data.current_conditions.length > 0 && (
+            <table className="conditions-table">
+              <tbody>
+                {data.current_conditions.filter(c => c.significant).map((c, i) => (
+                  <tr key={i}>
+                    <td className="cond-factor">{c.label}</td>
+                    <td className="cond-prank">{c.pct_rank}th pct</td>
+                    <td className="cond-signal" style={{ color: c.signal === 'headwind' ? '#C84040' : '#00C896' }}>
+                      {c.signal === 'headwind' ? '▼ headwind' : '▲ tailwind'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      );
+    }
+
+    // ── EarningsGauge ──────────────────────────────────────────────────────────
+    function EarningsGauge({ prob }) {
+      const canvasRef = useRef(null);
+      const color = prob >= 75 ? '#00C896' : prob >= 55 ? '#4A9FFF' : prob >= 35 ? '#E8A838' : '#C84040';
+      useChart(canvasRef, () => ({
+        type: 'doughnut',
+        data: {
+          datasets: [{
+            data: [prob, 100 - prob],
+            backgroundColor: [color, 'rgba(255,255,255,0.04)'],
+            borderWidth: 0,
+            circumference: 180,
+            rotation: -90,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: '72%',
+          plugins: { legend: { display: false }, tooltip: { enabled: false } },
+        },
+      }), [prob]);
+
+      return (
+        <div className="gauge-wrap">
+          <canvas ref={canvasRef} />
+          <div className="gauge-score" style={{ color }}>{prob}</div>
+        </div>
+      );
+    }
+
+    // ── EarningsHistoryChart ────────────────────────────────────────────────────
+    function EarningsHistoryChart({ history }) {
+      const canvasRef = useRef(null);
+      const valid = (history || []).slice().reverse().slice(-8);
+      useChart(canvasRef, () => ({
+        type: 'bar',
+        data: {
+          labels: valid.map(q => q.quarter),
+          datasets: [{
+            data: valid.map(q => q.surprise_pct),
+            backgroundColor: valid.map(q => q.beat ? 'rgba(0,200,150,0.6)' : 'rgba(200,64,64,0.6)'),
+            borderColor:     valid.map(q => q.beat ? '#00C896' : '#C84040'),
+            borderWidth: 1,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { label: ctx => `${ctx.parsed.y > 0 ? '+' : ''}${ctx.parsed.y}%` } },
+            annotation: {
+              annotations: {
+                zero: { type: 'line', y: 0, borderColor: 'rgba(255,255,255,0.15)', borderWidth: 1 }
+              }
+            }
+          },
+          scales: {
+            x: { grid: { display: false }, ticks: { color: '#2E3E52', font: { size: 8 } } },
+            y: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#4A5A72', font: { size: 8 }, callback: v => `${v}%` } },
+          },
+        },
+      }), [valid.length]);
+
+      return <div className="earnings-history-wrap"><canvas ref={canvasRef} /></div>;
+    }
+
+    // ── SentimentChart ─────────────────────────────────────────────────────────
+    function SentimentChart({ data }) {
+      const canvasRef = useRef(null);
+      const weeks = data.weeks_data || [];
+      const upper = data.upper_threshold;
+      const lower = data.lower_threshold;
+      const mean  = data.mean_line;
+
+      useChart(canvasRef, () => ({
+        type: 'line',
+        data: {
+          labels: weeks.map(w => w.week),
+          datasets: [{
+            label: 'Search Interest',
+            data: weeks.map(w => w.score),
+            borderColor: '#4A9FFF',
+            backgroundColor: 'rgba(74,159,255,0.05)',
+            borderWidth: 1.5,
+            pointRadius: weeks.map((_, i) => i === weeks.length - 1 ? 5 : 0),
+            pointBackgroundColor: '#4A9FFF',
+            tension: 0.3,
+            fill: false,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { label: ctx => `Interest: ${ctx.parsed.y}` } },
+            annotation: {
+              annotations: {
+                upperLine: {
+                  type: 'line', y: upper,
+                  borderColor: 'rgba(200,64,64,0.5)', borderWidth: 1, borderDash: [5, 3],
+                  label: { content: '+1.5σ', display: true, position: 'end',
+                           color: 'rgba(200,64,64,0.7)', font: { size: 9 }, padding: 2 }
+                },
+                upperZone: {
+                  type: 'box', yMin: upper, backgroundColor: 'rgba(200,64,64,0.05)', borderWidth: 0,
+                },
+                lowerLine: {
+                  type: 'line', y: lower,
+                  borderColor: 'rgba(0,200,150,0.5)', borderWidth: 1, borderDash: [5, 3],
+                  label: { content: '-1.5σ', display: true, position: 'end',
+                           color: 'rgba(0,200,150,0.7)', font: { size: 9 }, padding: 2 }
+                },
+                lowerZone: {
+                  type: 'box', yMax: lower, backgroundColor: 'rgba(0,200,150,0.05)', borderWidth: 0,
+                },
+                meanLine: {
+                  type: 'line', y: mean,
+                  borderColor: 'rgba(255,255,255,0.1)', borderWidth: 1, borderDash: [3, 3],
+                },
+              }
+            }
+          },
+          scales: {
+            x: {
+              grid: { display: false },
+              ticks: { color: '#2E3E52', font: { size: 8 }, maxTicksLimit: 8,
+                       callback: (_, i) => { const w = weeks[i]; return w ? w.week.slice(5) : ''; } },
+            },
+            y: {
+              grid: { color: 'rgba(255,255,255,0.04)' },
+              ticks: { color: '#4A5A72', font: { size: 9 } },
+              min: 0, max: 100,
+            },
+          },
+        },
+      }), [weeks.length, upper, lower]);
+
+      return <div className="sentiment-chart-wrap"><canvas ref={canvasRef} /></div>;
+    }
+
+    // ── ScenarioRange ──────────────────────────────────────────────────────────
+    function ScenarioRange({ data, weights, onWeightChange }) {
+      const { current_price, analyst_target, scenarios } = data;
+      const bear = scenarios.bear;
+      const base = scenarios.base;
+      const bull = scenarios.bull;
+
+      const wt = round2 => Math.round(round2);
+      const allPrices = [bear.price, current_price, analyst_target, bull.price].filter(Boolean);
+      const minP = Math.min(...allPrices) * 0.92;
+      const maxP = Math.max(...allPrices) * 1.06;
+      const span = maxP - minP;
+      const pos = p => `${Math.min(Math.max((p - minP) / span * 100, 1), 99)}%`;
+
+      const weighted = round2(bear.price * weights.bear + base.price * weights.base + bull.price * weights.bull);
+
+      const COLS = {
+        bear: { color: '#C84040', border: 'rgba(200,64,64,0.3)' },
+        base: { color: '#E8A838', border: 'rgba(232,168,56,0.3)' },
+        bull: { color: '#00C896', border: 'rgba(0,200,150,0.3)' },
+      };
+
+      return (
+        <div>
+          <div className="pwtarget-label">Probability-weighted target</div>
+          <div className="pwtarget-value">${weighted.toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+
+          {/* Range axis */}
+          <div className="scenario-range-axis">
+            <div className="scenario-gradient-bar" />
+            {/* Bear */}
+            <div className="scenario-dot" style={{ left: pos(bear.price) }}>
+              <div className="scenario-dot-circle" style={{ background: '#C84040' }} />
+              <div className="scenario-dot-label" style={{ color: '#C84040' }}>BEAR</div>
+              <div className="scenario-dot-ret"  style={{ color: '#C84040' }}>${bear.price.toFixed(0)}</div>
+            </div>
+            {/* Current */}
+            <div className="scenario-dot" style={{ left: pos(current_price) }}>
+              <div className="scenario-dot-circle" style={{ background: '#D0D8E8' }} />
+              <div className="scenario-dot-label">NOW</div>
+              <div className="scenario-dot-ret"  style={{ color: '#D0D8E8' }}>${current_price.toFixed(0)}</div>
+            </div>
+            {/* Analyst target */}
+            {analyst_target && (
+              <div className="scenario-dot" style={{ left: pos(analyst_target) }}>
+                <div className="scenario-dot-circle" style={{ background: '#4A9FFF' }} />
+                <div className="scenario-dot-label" style={{ color: '#4A9FFF' }}>CONS.</div>
+                <div className="scenario-dot-ret"  style={{ color: '#4A9FFF' }}>${analyst_target.toFixed(0)}</div>
+              </div>
+            )}
+            {/* Bull */}
+            <div className="scenario-dot" style={{ left: pos(bull.price) }}>
+              <div className="scenario-dot-circle" style={{ background: '#00C896' }} />
+              <div className="scenario-dot-label" style={{ color: '#00C896' }}>BULL</div>
+              <div className="scenario-dot-ret"  style={{ color: '#00C896' }}>${bull.price.toFixed(0)}</div>
+            </div>
+          </div>
+
+          {/* Scenario detail cards */}
+          <div className="scenario-cards">
+            {['bear','base','bull'].map(key => {
+              const s = scenarios[key];
+              const c = COLS[key];
+              return (
+                <div key={key} className="scenario-card" style={{ borderLeftColor: c.color, borderLeftWidth: 3 }}>
+                  <div className="sc-name" style={{ color: c.color }}>{key}</div>
+                  <div className="sc-price" style={{ color: c.color }}>${s.price.toFixed(2)}</div>
+                  <div className="sc-ret"   style={{ color: s.return_pct >= 0 ? '#00C896' : '#C84040' }}>
+                    {s.return_pct >= 0 ? '+' : ''}{s.return_pct}%
+                  </div>
+                  <div className="sc-driver">{s.key_driver}</div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Probability weight sliders */}
+          <div className="scenario-weights">
+            <div className="weights-label">Adjust scenario weights</div>
+            {[['bear','Bear',COLS.bear.color],['base','Base',COLS.base.color],['bull','Bull',COLS.bull.color]].map(([key, label, color]) => (
+              <div key={key} className="weight-row">
+                <div className="weight-name" style={{ color }}>{label}</div>
+                <input
+                  type="range" min="0" max="100" step="5"
+                  className="weight-slider"
+                  value={Math.round(weights[key] * 100)}
+                  onChange={e => onWeightChange(key, parseInt(e.target.value) / 100)}
+                />
+                <div className="weight-pct">{Math.round(weights[key] * 100)}%</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    function round2(n) { return Math.round(n * 100) / 100; }
+
+    // ── ModelConfidencePanel ────────────────────────────────────────────────────
+    function ModelConfidencePanel({ ticker, sector, validationData, onValidate, validating }) {
+      const tier = validationData?.tier || null;
+      const tierClass = tier ? `confidence-tier-${tier.toLowerCase()}` : 'confidence-tier-unvalidated';
+      const tierLabel = tier || 'NOT VALIDATED';
+
+      const MODEL_LABELS = { factor: 'Factor Model', earnings: 'Earnings Model', sentiment: 'Sentiment Signal' };
+
+      function ModelCard({ modelKey, model }) {
+        const status = model?.status || (model?.validated ? 'PASS' : 'FAIL');
+        const validated = model?.validated;
+        const lightClass = status === 'PASS' ? 'cm-light-pass' : status === 'DATA_GATE' ? 'cm-light-data-gate' : 'cm-light-fail';
+        const statusClass = status === 'PASS' ? 'cm-status-pass' : status === 'DATA_GATE' ? 'cm-status-data-gate' : 'cm-status-fail';
+
+        // Per-model key metrics
+        const metrics = [];
+        if (modelKey === 'factor' && model?.directional_accuracy != null) {
+          metrics.push(['DIR ACC', `${model.directional_accuracy}%`]);
+          if (model.ic != null) metrics.push(['IC', model.ic > 0 ? `+${model.ic}` : String(model.ic)]);
+          if (model.r2_oos != null) metrics.push(['OOS R²', model.r2_oos]);
+          if (model.n_oos != null) metrics.push(['N OOS', model.n_oos]);
+        }
+        if (modelKey === 'earnings' && model?.brier_skill != null) {
+          metrics.push(['BRIER SKILL', model.brier_skill > 0 ? `+${model.brier_skill}` : String(model.brier_skill)]);
+          if (model.beat_rate != null) metrics.push(['BEAT RATE', `${model.beat_rate}%`]);
+          if (model.n_events != null) metrics.push(['N EVENTS', model.n_events]);
+        }
+        if (modelKey === 'sentiment' && model?.n_signals != null) {
+          metrics.push(['N SIGNALS', model.n_signals]);
+          if (model.elevated?.t_stat != null) metrics.push(['T-STAT (↑)', model.elevated.t_stat]);
+          if (model.depressed?.t_stat != null) metrics.push(['T-STAT (↓)', model.depressed.t_stat]);
+          if (model.signal_sharpe != null) metrics.push(['SHARPE', model.signal_sharpe]);
+        }
+
+        return (
+          <div className="confidence-model-card">
+            <div className="cm-header">
+              <div className={`cm-light ${lightClass}`} />
+              <div className="cm-label">{MODEL_LABELS[modelKey] || modelKey}</div>
+            </div>
+            <div className={`cm-status ${statusClass}`}>{status}</div>
+            {metrics.length > 0 && (
+              <div className="cm-metrics">
+                {metrics.map(([k, v]) => (
+                  <div className="cm-metric" key={k}>{k}: <span>{v}</span></div>
+                ))}
+              </div>
+            )}
+            {model?.message && (
+              <div className="cm-message">{model.message.slice(0, 120)}{model.message.length > 120 ? '…' : ''}</div>
+            )}
+          </div>
+        );
+      }
+
+      return (
+        <div className="confidence-panel">
+          <div className="confidence-header">
+            {tier ? (
+              <div className={`confidence-tier-badge ${tierClass}`}>{tierLabel} CONFIDENCE</div>
+            ) : (
+              <div className="confidence-tier-badge confidence-tier-unvalidated">MODEL CONFIDENCE</div>
+            )}
+            <button
+              className="confidence-validate-btn"
+              onClick={onValidate}
+              disabled={validating || !ticker}
+            >
+              {validating ? '› running...' : tier ? '↻ revalidate' : '› run validation'}
+            </button>
+            {validationData?.validated_at && (
+              <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 9, color: '#1E2A38', marginLeft: 4 }}>
+                {new Date(validationData.validated_at).toLocaleTimeString()}
+              </span>
+            )}
+          </div>
+
+          {validationData?.tier_note && (
+            <div className="confidence-note">{validationData.tier_note}</div>
+          )}
+
+          {!validationData && !validating && (
+            <div className="confidence-note">
+              Click › run validation to run walk-forward out-of-sample tests on the three predictive models.
+              Validation uses 5 years of weekly data and takes 60-180 seconds.
+            </div>
+          )}
+          {validating && (
+            <div className="confidence-note" style={{ color: '#4A9FFF' }}>
+              › running walk-forward validation · this may take 60-180s…
+            </div>
+          )}
+
+          {validationData?.models && (
+            <div className="confidence-models">
+              {Object.entries(validationData.models).map(([key, model]) => (
+                <ModelCard key={key} modelKey={key} model={model} />
+              ))}
+            </div>
+          )}
+
+          <div className="confidence-disclaimer">
+            {validationData?.disclaimer || 'Statistical validation uses historical data only. Past predictive accuracy does not guarantee future performance. For research purposes only — not investment advice.'}
+          </div>
+        </div>
+      );
+    }
+
+
+    // ── PredictTab ─────────────────────────────────────────────────────────────
+    function PredictTab({ predictiveData, loading, ticker, sector, validationData, onValidate, validating }) {
+      const [weights, setWeights] = useState({ bear: 0.25, base: 0.50, bull: 0.25 });
+
+      function handleWeightChange(key, val) {
+        // Clamp total to 100% by redistributing to other two
+        const other = ['bear','base','bull'].filter(k => k !== key);
+        const remaining = 1 - val;
+        const sumOther = weights[other[0]] + weights[other[1]];
+        setWeights(prev => {
+          const newW = { ...prev, [key]: val };
+          if (sumOther > 0) {
+            newW[other[0]] = Math.max(0, (prev[other[0]] / sumOther) * remaining);
+            newW[other[1]] = Math.max(0, 1 - val - newW[other[0]]);
+          }
+          return newW;
+        });
+      }
+
+      if (loading) {
+        return (
+          <div style={{ textAlign: 'center', padding: '80px 24px' }}>
+            <div className="predict-loading">› running predictive models...</div>
+            <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 9, color: '#1E2A38', marginTop: 8 }}>
+              factor regression · earnings probability · scenario modeling · sentiment z-score
+            </div>
+          </div>
+        );
+      }
+
+      if (!predictiveData) {
+        return (
+          <div style={{ textAlign: 'center', padding: '80px 24px' }}>
+            <div className="empty-title">run analysis to load predictive models</div>
+          </div>
+        );
+      }
+
+      const fa = predictiveData.factor_attribution   || {};
+      const ep = predictiveData.earnings_probability || {};
+      const sc = predictiveData.scenario             || {};
+      const sm = predictiveData.sentiment_mr         || {};
+
+      return (
+        <div className="fade-up">
+
+          {/* Model Confidence Panel */}
+          <ModelConfidencePanel
+            ticker={ticker}
+            sector={sector}
+            validationData={validationData}
+            onValidate={onValidate}
+            validating={validating}
+          />
+
+          {/* Row 1: Factor Attribution + Earnings Surprise side by side */}
+          <div className="predict-grid">
+
+            {/* Section 1 — Factor Attribution */}
+            <div className="predict-section">
+              <div className="predict-head">
+                <div className="predict-title">What Actually Moves This Stock</div>
+                <div className="predict-subtitle">OLS regression · weekly returns · trailing 2 years</div>
+              </div>
+              <div className="predict-body">
+                {fa.error
+                  ? <div className="predict-error">✗ {fa.error}</div>
+                  : fa.factors
+                    ? (
+                      <div>
+                        <FactorChart data={fa} />
+                        {fa.fdr_note && (
+                          <div className="ci-note">{fa.fdr_note}</div>
+                        )}
+                        {fa.factors && fa.factors[0]?.ci_95_lo != null && (
+                          <div className="ci-note">95% CI shown per coefficient (OLS t-distribution).</div>
+                        )}
+                      </div>
+                    )
+                    : <div className="predict-loading">› loading factor model...</div>
+                }
+              </div>
+            </div>
+
+            {/* Section 2 — Earnings Surprise Probability */}
+            <div className="predict-section">
+              <div className="predict-head">
+                <div className="predict-title">Earnings Surprise Probability</div>
+                <div className="predict-subtitle">Beat rate · estimate revision · analyst sentiment · sector read-through</div>
+              </div>
+              <div className="predict-body">
+                {ep.error
+                  ? <div className="predict-error">✗ {ep.error}</div>
+                  : ep.probability != null
+                    ? (
+                      <div>
+                        {/* Countdown */}
+                        {ep.next_earnings_date && (
+                          <div className="earnings-countdown">
+                            {ep.days_to_earnings != null && ep.days_to_earnings <= 14 && (
+                              <span className="pulse-dot" />
+                            )}
+                            <span className={ep.days_to_earnings != null && ep.days_to_earnings <= 14 ? 'earnings-urgent' : ''}>
+                              Next earnings: {ep.next_earnings_date}
+                              {ep.days_to_earnings != null && ` — ${ep.days_to_earnings} days`}
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Gauge */}
+                        <EarningsGauge prob={ep.probability} />
+                        <div style={{ textAlign: 'center', fontFamily: "'IBM Plex Mono', monospace", fontSize: 9, color: '#4A5A72', marginBottom: 4, letterSpacing: 0.5 }}>
+                          {ep.probability >= 75 ? 'STRONG BEAT LIKELY' : ep.probability >= 55 ? 'LIKELY BEAT' : ep.probability >= 35 ? 'NEUTRAL' : 'LIKELY MISS'}
+                        </div>
+                        {ep.prob_ci_lo != null && ep.prob_ci_hi != null && (
+                          <div className="ci-note" style={{ textAlign: 'center', marginBottom: 10 }}>
+                            95% bootstrap CI: {ep.prob_ci_lo}–{ep.prob_ci_hi}% · n={ep.n_quarters} qtrs
+                          </div>
+                        )}
+
+                        {/* Sub-scores */}
+                        {ep.sub_scores && Object.entries(ep.sub_scores).map(([k, v]) => {
+                          const label = k.replace(/_/g, ' ');
+                          const c = v >= 65 ? '#00C896' : v >= 35 ? '#E8A838' : '#C84040';
+                          return (
+                            <div key={k} className="sub-score-row">
+                              <div className="sub-score-label">{label}</div>
+                              <div className="sub-score-track">
+                                <div className="sub-score-fill" style={{ width: `${v}%`, background: c }} />
+                              </div>
+                              <div className="sub-score-val">{v}</div>
+                            </div>
+                          );
+                        })}
+
+                        {/* 8Q history */}
+                        {ep.quarterly_history && ep.quarterly_history.length > 0 && (
+                          <EarningsHistoryChart history={ep.quarterly_history} />
+                        )}
+                      </div>
+                    )
+                    : <div className="predict-loading">› loading earnings data...</div>
+                }
+              </div>
+            </div>
+          </div>
+
+          {/* Section 3 — Scenario Analysis */}
+          <div className="predict-section-full">
+            <div className="predict-head">
+              <div className="predict-title">Scenario Analysis — 12-Month Price Range</div>
+              <div className="predict-subtitle">Bear · base · bull cases using 2-year EV/Revenue range and trailing revenue growth</div>
+            </div>
+            <div className="predict-body">
+              {sc.error
+                ? <div className="predict-error">✗ {sc.error}</div>
+                : sc.scenarios
+                  ? <ScenarioRange data={sc} weights={weights} onWeightChange={handleWeightChange} />
+                  : <div className="predict-loading">› loading scenario model...</div>
+              }
+            </div>
+          </div>
+
+          {/* Section 4 — Sentiment Mean Reversion */}
+          <div className="predict-section-full">
+            <div className="predict-head">
+              <div className="predict-title">Sentiment Mean Reversion</div>
+              <div className="predict-subtitle">Google Trends interest z-score vs 6-month baseline — contrarian positioning signal</div>
+            </div>
+            <div className="predict-body">
+              {sm.error
+                ? <div className="predict-error">✗ {sm.error}</div>
+                : sm.weeks_data
+                  ? (
+                    <div>
+                      <div className={`sentiment-signal-banner ${sm.signal === 'elevated' ? 'sent-elevated' : sm.signal === 'depressed' ? 'sent-depressed' : 'sent-neutral'}`}>
+                        {sm.signal_text}
+                      </div>
+                      <div style={{ display: 'flex', gap: 20, marginBottom: 10 }}>
+                        {[
+                          ['Z-score',     sm.z_score,         null],
+                          ['4W avg',      sm.current_4w_avg,  null],
+                          ['6M avg',      sm.six_month_avg,   null],
+                          ['vs avg',      `${sm.pct_above_avg > 0 ? '+' : ''}${sm.pct_above_avg}%`, null],
+                        ].map(([lbl, val]) => (
+                          <div key={lbl} style={{ textAlign: 'center' }}>
+                            <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 8, color: '#2E3E52', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 2 }}>{lbl}</div>
+                            <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, color: '#D0D8E8' }}>{val}</div>
+                          </div>
+                        ))}
+                      </div>
+                      <SentimentChart data={sm} />
+                      {sm.correlation_note && (
+                        <div className={`sentiment-corr ${sm.correlation_validated ? 'corr-validated' : ''}`}>
+                          {sm.correlation_note}
+                        </div>
+                      )}
+                    </div>
+                  )
+                  : <div className="predict-loading">› loading sentiment data...</div>
+              }
+            </div>
+          </div>
+
+        </div>
+      );
+    }
+
+    // ── LoadingPanel ───────────────────────────────────────────────────────────
+    function LoadingPanel({ ticker, currentTool, completedTools, sectorInfo, parallelSources }) {
+      const isSynthesis = currentTool === 'claude_synthesis';
+      const isParallel  = currentTool === 'parallel_data_enrichment';
+      const ESTIMATED_TOOLS = 22;
+      const done  = completedTools.length + parallelSources.length;
+      const progress = isSynthesis ? 95 : Math.min(Math.round((done / ESTIMATED_TOOLS) * 92), 92);
+
+      return (
+        <div className="loading-wrap">
+          <div className="loading-header">// running analysis for {ticker}</div>
+          {sectorInfo && (
+            <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, color: '#3A6A8A', marginBottom: 10, letterSpacing: 0.5 }}>
+              ↳ {sectorInfo.sector} · {sectorInfo.industry} — {sectorInfo.toolkit}
+            </div>
+          )}
+          <div className="loading-line">
+            <span className="loading-tool-name">{currentTool || 'initializing'}</span>
+            (<span style={{ color: '#E8A838' }}>"{ticker}"</span>)
+            <span className="cursor" />
+          </div>
+          <div className="progress-track">
+            <div className="progress-fill" style={{ width: `${progress}%` }} />
+          </div>
+          {(completedTools.length > 0 || parallelSources.length > 0) && (
+            <div className="step-log">
+              {completedTools.map(t => (
+                <div key={t} className="step-log-item done">✓ {t}</div>
+              ))}
+              {isParallel && parallelSources.length === 0 && (
+                <div className="step-log-item active">› fetching parallel data sources...</div>
+              )}
+              {parallelSources.map((s, i) => (
+                <div key={`ps${i}`} className={`step-log-item ${s.ok ? 'done' : ''}`} style={!s.ok ? { color: '#4A3A3A' } : {}}>
+                  {s.ok ? '✓' : '✗'} {s.source}
+                </div>
+              ))}
+              {!isParallel && currentTool && (
+                <div className="step-log-item active">› {currentTool}</div>
+              )}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ── Backend URL ────────────────────────────────────────────────────────────
+    const BACKEND_URL = 'http://localhost:8000';
+
+    // ── App ────────────────────────────────────────────────────────────────────
+    function App() {
+      const [ticker, setTicker]             = useState('NVDA');
+      const [analysis, setAnalysis]         = useState(null);
+      const [loading, setLoading]           = useState(false);
+      const [error, setError]               = useState(null);
+      const [currentTool, setCurrentTool]   = useState(null);
+      const [completedTools, setCompleted]  = useState([]);
+      const [sectorInfo, setSectorInfo]     = useState(null);
+      const [traceOpen, setTraceOpen]       = useState(false);
+      const [expandedClaim, setExpanded]    = useState(null);
+      const [backendOk, setBackendOk]       = useState(null);
+      const [lastUpdated, setLastUpdated]   = useState(null);
+      const [parallelSources, setParallelSources] = useState([]);
+      const [parallelDone, setParallelDone] = useState(false);
+      const [socialFilter, setSocialFilter] = useState('all');
+      const [expandedTraceSteps, setExpandedTraceSteps] = useState({});
+      const [compsData, setCompsData]         = useState(null);
+      const [compsLoading, setCompsLoading]   = useState(false);
+      const [activeTab, setActiveTab]         = useState('snapshot');
+      const [predictiveData, setPredictive]   = useState(null);
+      const [predictiveLoading, setPredictiveLoading] = useState(false);
+      const [validationData, setValidation]   = useState(null);
+      const [validating, setValidating]       = useState(false);
+
+      useEffect(() => {
+        fetch(`${BACKEND_URL}/health`, { signal: AbortSignal.timeout(3000) })
+          .then(r => setBackendOk(r.ok))
+          .catch(() => setBackendOk(false));
+      }, []);
+
+      // Fetch comps when analysis arrives and competitors are available
+      useEffect(() => {
+        if (!analysis) return;
+        const peers = analysis.company_overview?.competitors;
+        if (!peers || peers.length === 0) return;
+        setCompsLoading(true);
+        fetch(`${BACKEND_URL}/comps`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            subject_ticker: analysis.ticker,
+            peers,
+            sector: analysis.sector || null,
+          }),
+        })
+          .then(r => r.json())
+          .then(d => { setCompsData(d); setCompsLoading(false); })
+          .catch(() => setCompsLoading(false));
+      }, [analysis]);
+
+      async function runAnalysis(overrideTicker) {
+        const t = (overrideTicker || ticker).trim().toUpperCase();
+        if (!t) return;
+
+        if (overrideTicker) setTicker(overrideTicker);
+        setLoading(true);
+        setError(null);
+        setAnalysis(null);
+        setCompsData(null);
+        setPredictive(null);
+        setPredictiveLoading(true);
+        setValidation(null);
+        setExpanded(null);
+        setTraceOpen(false);
+        setCurrentTool('get_sector_profile');
+        setCompleted([]);
+        setSectorInfo(null);
+        setParallelSources([]);
+        setParallelDone(false);
+        setSocialFilter('all');
+        setExpandedTraceSteps({});
+
+        try {
+          const res = await fetch(`${BACKEND_URL}/analyze`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ticker: t }),
+          });
+
+          if (!res.ok) {
+            const txt = await res.text().catch(() => '');
+            throw new Error(txt || `Backend returned ${res.status} for ${t}`);
+          }
+
+          const reader = res.body.getReader();
+          const dec    = new TextDecoder();
+          let buf = '';
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buf += dec.decode(value, { stream: true });
+            const lines = buf.split('\n');
+            buf = lines.pop();
+
+            for (const line of lines) {
+              if (!line.startsWith('data: ')) continue;
+              try {
+                const evt = JSON.parse(line.slice(6));
+                if (evt.type === 'tool_start')      setCurrentTool(evt.tool);
+                if (evt.type === 'tool_done')       setCompleted(prev => [...prev, evt.tool]);
+                if (evt.type === 'sector_detected') setSectorInfo({ sector: evt.sector, industry: evt.industry, toolkit: evt.toolkit });
+                if (evt.type === 'parallel_start')  setCurrentTool('parallel_data_enrichment');
+                if (evt.type === 'source_done')     setParallelSources(prev => [...prev, { source: evt.source, ok: evt.ok, note: evt.note }]);
+                if (evt.type === 'parallel_done')   setParallelDone(true);
+                if (evt.type === 'predictive_done') { setPredictive(evt.data); setPredictiveLoading(false); }
+                if (evt.type === 'synthesizing')    setCurrentTool('claude_synthesis');
+                if (evt.type === 'result')          { setAnalysis(evt.data); setBackendOk(true); setLastUpdated(new Date()); }
+                if (evt.type === 'error')           throw new Error(evt.message);
+              } catch (parseErr) {
+                if (parseErr.message !== 'Unexpected token') throw parseErr;
+              }
+            }
+          }
+
+        } catch (e) {
+          const msg = e.message || 'Unknown error';
+          setBackendOk(false);
+          setError(
+            msg.includes('fetch') || msg.includes('Failed') || msg.includes('NetworkError')
+              ? `Cannot reach backend at ${BACKEND_URL} — is the server running?\n→ uvicorn server:app --reload`
+              : msg
+          );
+        } finally {
+          setLoading(false);
+          setCurrentTool(null);
+          setPredictiveLoading(false);
+        }
+      }
+
+      async function runValidation() {
+        const t = ticker.trim().toUpperCase();
+        if (!t) return;
+        setValidating(true);
+        try {
+          const res = await fetch(`${BACKEND_URL}/validate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ticker: t, sector: analysis?.sector || null }),
+          });
+          const data = await res.json();
+          setValidation(data);
+        } catch (e) {
+          setValidation({ tier: 'UNVALIDATED', tier_note: `Validation failed: ${e.message}`, error: e.message });
+        } finally {
+          setValidating(false);
+        }
+      }
+
+      const sig   = analysis ? (SIGNAL_CONFIG[analysis.behavioral_signal?.state] || SIGNAL_CONFIG['Aligned']) : null;
+      const vdict = analysis ? (VERDICT_CONFIG[analysis.verdict] || VERDICT_CONFIG['HOLD']) : null;
+      const f     = analysis?.fundamentals || {};
+
+      // Confidence from parallelSources
+      const okSources = parallelSources.filter(s => s.ok).length;
+      const confidenceLabel = okSources >= 6 ? 'HIGH CONFIDENCE' : okSources >= 4 ? 'MEDIUM CONFIDENCE' : 'LOW CONFIDENCE';
+      const confidenceColor = okSources >= 6 ? '#00C896' : okSources >= 4 ? '#E8A838' : '#C84040';
+      const confidenceBorder = okSources >= 6 ? 'rgba(0,200,150,0.3)' : okSources >= 4 ? 'rgba(232,168,56,0.3)' : 'rgba(200,64,64,0.3)';
+
+      // Social posts for Retail Narrative Feed
+      const allPosts = [
+        ...(analysis?.social?.top_reddit_posts || []).map(p => ({ ...p, _source: 'reddit' })),
+        ...(analysis?.social?.top_stocktwits || []).map(p => ({ ...p, _source: 'stocktwits' })),
+      ];
+      const filteredPosts = socialFilter === 'all'
+        ? allPosts
+        : allPosts.filter(p => {
+            const sent = (p.sentiment || '').toLowerCase();
+            return sent === socialFilter || (socialFilter === 'bullish' && sent === 'bullish') || (socialFilter === 'bearish' && sent === 'bearish') || (socialFilter === 'neutral' && (sent === 'neutral' || sent === ''));
+          });
+
+      // Verdict rationale: first sentence for subhead
+      const rationale = analysis?.verdict_rationale || '';
+      const firstSentEnd = rationale.search(/[.!?]/);
+      const subhead = firstSentEnd > 0 ? rationale.slice(0, firstSentEnd + 1) : rationale.slice(0, 80) + (rationale.length > 80 ? '…' : '');
+
+      // Macro sensitivity headwinds/tailwinds count
+      const macroRows = [
+        { name: 'Rate Sensitivity', val: f.macro_rate_sensitivity },
+        { name: 'USD Sensitivity',  val: f.macro_usd_sensitivity  },
+        { name: 'GDP / Cycle',      val: f.macro_gdp_sensitivity  },
+      ].filter(r => r.val);
+      const headwinds = macroRows.filter(r => isMacroHeadwind(r.val)).length;
+      const tailwinds = macroRows.length - headwinds;
+
+      // Reasoning trace stats
+      const traceSteps = analysis?.reasoning_trace || [];
+      const traceEstimatedSecs = (traceSteps.length * 2).toFixed(1);
+
+      // Price context
+      const priceHigh = analysis?.price_52w_high;
+      const priceLow  = analysis?.price_52w_low;
+      const currentPrice = analysis?.price;
+      let rangePct = null;
+      if (priceHigh && priceLow && currentPrice && priceHigh > priceLow) {
+        rangePct = (currentPrice - priceLow) / (priceHigh - priceLow);
+        rangePct = Math.min(Math.max(rangePct, 0), 1);
+      }
+      const rangeColor = rangePct != null ? (rangePct > 0.5 ? '#00C896' : '#C84040') : '#4A5A72';
+      const fromHigh = priceHigh && currentPrice ? (((currentPrice - priceHigh) / priceHigh) * 100).toFixed(1) : null;
+      const analystTarget = f.analyst_target;
+      const toTarget = analystTarget && currentPrice ? (((parseFloat(analystTarget) - currentPrice) / currentPrice) * 100).toFixed(1) : null;
+      const avgVolM = analysis?.avg_volume_m;
+
+      return (
+        <div>
+
+          {/* ── Header ───────────────────────────────────────────────────── */}
+          <header className="header">
+            <div className="logo">▸ RESEARCH</div>
+
+            <div className="ticker-row">
+              {TICKERS.map(t => (
+                <button
+                  key={t}
+                  className={`pill${ticker === t ? ' pill-active' : ''}`}
+                  onClick={() => { setTicker(t); setAnalysis(null); setError(null); }}
+                >
+                  {t}
+                </button>
+              ))}
+              <input
+                className="ticker-input"
+                placeholder="TICKER"
+                value={TICKERS.includes(ticker) ? '' : ticker}
+                onChange={e => {
+                  const v = e.target.value.toUpperCase().replace(/[^A-Z.]/g, '');
+                  setTicker(v || 'NVDA');
+                  setAnalysis(null);
+                  setError(null);
+                }}
+                onKeyDown={e => e.key === 'Enter' && ticker.trim() && runAnalysis()}
+                maxLength={6}
+              />
+            </div>
+
+            <div className="header-right">
+              <div className="backend-status">
+                <span className="status-dot" style={{
+                  background: backendOk === true ? '#00C896' : backendOk === false ? '#C84040' : '#2E3E52',
+                }} />
+                <span className="status-text">
+                  {backendOk === false ? 'offline' : 'localhost:8000'}
+                </span>
+              </div>
+              <button className="run-btn" onClick={runAnalysis} disabled={loading}>
+                {loading ? 'RUNNING...' : 'RUN ANALYSIS'}
+              </button>
+            </div>
+          </header>
+
+          {/* ── Body ─────────────────────────────────────────────────────── */}
+          <main className="main">
+
+            {error && <div className="error-bar">{error}</div>}
+
+            {loading && <LoadingPanel ticker={ticker.toUpperCase()} currentTool={currentTool} completedTools={completedTools} sectorInfo={sectorInfo} parallelSources={parallelSources} />}
+
+            {analysis && !loading && (
+              <div className="fade-up">
+
+                {/* ── Stock meta ─────────────────────────────────────────── */}
+                <div className="stock-meta">
+                  <div>
+                    <div className="stock-name">{analysis.company_name}</div>
+                    <div className="stock-sub">
+                      {analysis.ticker}
+                      {analysis.sector && <span> · <span style={{ color: '#3A8A7A' }}>{analysis.sector}</span></span>}
+                      {analysis.industry && <span style={{ color: '#2E3E52' }}> · {analysis.industry}</span>}
+                    </div>
+                    {analysis.sector_toolkit && (
+                      <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 9, color: '#2E4A5E', marginTop: 3, letterSpacing: 0.5 }}>
+                        {analysis.sector_toolkit}
+                      </div>
+                    )}
+                    {lastUpdated && (
+                      <div className="last-updated">
+                        updated {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                      </div>
+                    )}
+                  </div>
+                  <div className="price-group">
+                    <span className="price">
+                      ${(analysis.price || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                    <span className={`chg ${(analysis.price_change_pct || 0) >= 0 ? 'chg-pos' : 'chg-neg'}`}>
+                      {(analysis.price_change_pct || 0) >= 0 ? '+' : ''}{(analysis.price_change_pct || 0).toFixed(2)}%
+                    </span>
+                    <span className="mktcap">
+                      ${(analysis.market_cap_b || 0).toFixed(0)}B
+                    </span>
+                  </div>
+                  <div className="live-badge">Live Data</div>
+                </div>
+
+                {/* ── Price context strip ───────────────────────────────── */}
+                {(priceHigh || priceLow || fromHigh || toTarget || avgVolM) && (
+                  <div className="price-context-strip">
+                    <span className="price-context-label">52W</span>
+                    {rangePct != null && (
+                      <div className="price-range-bar-wrap">
+                        <div className="price-range-track">
+                          <div
+                            className="price-range-fill"
+                            style={{ width: `${rangePct * 100}%`, background: rangeColor }}
+                          />
+                          <div
+                            className="price-range-dot"
+                            style={{ left: `${rangePct * 100}%`, background: rangeColor }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                    {fromHigh != null && (
+                      <span className="price-stat">
+                        <span>from 52W high:</span>{fromHigh > 0 ? '+' : ''}{fromHigh}%
+                      </span>
+                    )}
+                    {toTarget != null && (
+                      <span className="price-stat">
+                        <span>to target:</span>{toTarget > 0 ? '+' : ''}{toTarget}%
+                      </span>
+                    )}
+                    {avgVolM != null && (
+                      <span className="price-stat">
+                        <span>avg vol:</span>{avgVolM}M
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {/* ── Company overview (two-zone) ──────────────────────── */}
+                {analysis.company_overview && (
+                  <div className="co-panel">
+                    {/* Left: Business Snapshot + Model + Moat */}
+                    <div className="co-left">
+                      <div className="co-snapshot-grid">
+                        {analysis.sector && (
+                          <div className="co-snapshot-row">
+                            <span className="co-snapshot-label">Sector</span>
+                            <span className="co-snapshot-val">{analysis.sector}</span>
+                          </div>
+                        )}
+                        {analysis.company_overview.founded && (
+                          <div className="co-snapshot-row">
+                            <span className="co-snapshot-label">Founded</span>
+                            <span className="co-snapshot-val">{analysis.company_overview.founded}</span>
+                          </div>
+                        )}
+                        {analysis.company_overview.headquarters && (
+                          <div className="co-snapshot-row">
+                            <span className="co-snapshot-label">HQ</span>
+                            <span className="co-snapshot-val">{analysis.company_overview.headquarters}</span>
+                          </div>
+                        )}
+                        {analysis.company_overview.employees && (
+                          <div className="co-snapshot-row">
+                            <span className="co-snapshot-label">
+                              Employees
+                              {analysis.company_overview.employees_change_pct != null && (
+                                <span style={{ color: analysis.company_overview.employees_change_pct < 0 ? '#C84040' : '#00C896', marginLeft: 4 }}>
+                                  {analysis.company_overview.employees_change_pct > 0 ? '+' : ''}{analysis.company_overview.employees_change_pct}%
+                                </span>
+                              )}
+                            </span>
+                            <span className="co-snapshot-val">{analysis.company_overview.employees}</span>
+                          </div>
+                        )}
+                        {analysis.company_overview.revenue_ttm_b != null && (
+                          <div className="co-snapshot-row">
+                            <span className="co-snapshot-label">Revenue TTM</span>
+                            <span className="co-snapshot-val">${analysis.company_overview.revenue_ttm_b}B</span>
+                          </div>
+                        )}
+                      </div>
+                      {analysis.company_overview.business_model && (
+                        <div className="co-model-line">{analysis.company_overview.business_model}</div>
+                      )}
+                      {analysis.company_overview.competitive_position && (
+                        <div className="co-moat-line">▸ {analysis.company_overview.competitive_position}</div>
+                      )}
+                    </div>
+
+                    {/* Right: Products + Competitors + Catalyst Calendar */}
+                    <div className="co-right">
+                      {analysis.company_overview.description && (
+                        <div style={{ fontSize: 11, color: '#6872A4', lineHeight: 1.6 }}>
+                          {analysis.company_overview.description}
+                        </div>
+                      )}
+                      {analysis.company_overview.key_products?.length > 0 && (
+                        <div>
+                          <div className="co-pills-label">Key Products</div>
+                          <div className="co-pills-row">
+                            {analysis.company_overview.key_products.map((p, i) => (
+                              <span key={i} className="co-product-pill">{p}</span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {analysis.company_overview.competitors?.length > 0 && (
+                        <div>
+                          <div className="co-pills-label">Key Competitors</div>
+                          <div className="co-pills-row">
+                            {analysis.company_overview.competitors.map((c, i) => (
+                              <button
+                                key={i}
+                                className="co-competitor-pill"
+                                title={`Load analysis for ${c}`}
+                                onClick={() => runAnalysis(c)}
+                              >
+                                {c}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {(analysis.company_overview.next_earnings_date || analysis.company_overview.ex_dividend_date) && (
+                        <div>
+                          <div className="co-pills-label">Catalyst Calendar</div>
+                          <div className="co-pills-row">
+                            {analysis.company_overview.next_earnings_date && (
+                              <span className="co-calendar-chip">
+                                📅 Earnings: {analysis.company_overview.next_earnings_date}
+                              </span>
+                            )}
+                            {analysis.company_overview.ex_dividend_date && (
+                              <span className="co-calendar-chip">
+                                💰 Ex-Div: {analysis.company_overview.ex_dividend_date}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* ── TIER 1: Macro strip ───────────────────────────────── */}
+                {analysis.macro && (
+                  <div className="macro-strip">
+                    <span className="macro-label">Macro</span>
+                    {analysis.macro.fed_funds_pct != null && (
+                      <span className={`macro-pill ${analysis.macro.fed_funds_pct > 5 ? 'macro-pill-red' : analysis.macro.fed_funds_pct < 3 ? 'macro-pill-green' : 'macro-pill-amber'}`}>
+                        Fed {analysis.macro.fed_funds_pct}%
+                      </span>
+                    )}
+                    {analysis.macro.treasury_10y_pct != null && (
+                      <span className={`macro-pill ${analysis.macro.treasury_10y_pct > 5 ? 'macro-pill-red' : analysis.macro.treasury_10y_pct < 3.5 ? 'macro-pill-green' : 'macro-pill-amber'}`}>
+                        10Y {analysis.macro.treasury_10y_pct}%
+                      </span>
+                    )}
+                    {analysis.macro.cpi_yoy_pct != null && (
+                      <span className={`macro-pill ${analysis.macro.cpi_yoy_pct > 4 ? 'macro-pill-red' : analysis.macro.cpi_yoy_pct < 2.5 ? 'macro-pill-green' : 'macro-pill-amber'}`}>
+                        CPI {analysis.macro.cpi_yoy_pct}%
+                      </span>
+                    )}
+                    {analysis.macro.spread_2s10s != null && (
+                      <span className={`macro-pill ${analysis.macro.yield_curve_inverted ? 'macro-pill-red' : analysis.macro.spread_2s10s > 0.3 ? 'macro-pill-green' : 'macro-pill-amber'}`}>
+                        2s10s {analysis.macro.spread_2s10s > 0 ? '+' : ''}{analysis.macro.spread_2s10s}%
+                      </span>
+                    )}
+                    <span className={`macro-regime ${analysis.macro.regime === 'Easing' ? 'macro-pill-green' : analysis.macro.regime === 'Tightening' ? 'macro-pill-red' : 'macro-pill-gray'} macro-pill`}>
+                      {analysis.macro.regime}
+                    </span>
+                  </div>
+                )}
+
+                {/* ── Tab navigation ────────────────────────────────────── */}
+                <div className="tab-nav">
+                  {[['snapshot','Snapshot'],['predict','Predict']].map(([id, label]) => (
+                    <button
+                      key={id}
+                      className={`tab-btn${activeTab === id ? ' tab-btn-active' : ''}`}
+                      onClick={() => setActiveTab(id)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* ════════════════════════════ SNAPSHOT TAB ══════════════ */}
+                {activeTab === 'snapshot' && (
+                <div>
+
+                {/* ── TIER 1: Score cards ───────────────────────────────── */}
+                <div className="score-row">
+                  <ScoreCard
+                    score={analysis.scores?.fundamental ?? 0}
+                    label="Fundamental Score"
+                    note="Rule of 40 · gross margin · revenue growth · earnings beat rate"
+                  />
+                  <ScoreCard
+                    score={analysis.scores?.retail_sentiment ?? 0}
+                    label="Retail Sentiment"
+                    note="Reddit · StockTwits · news tone · search interest"
+                  />
+                  <ScoreCard
+                    score={analysis.scores?.divergence ?? 0}
+                    label="Divergence Score"
+                    note="Gap between narrative perception and fundamental reality"
+                  />
+                  <ScoreCard
+                    score={analysis.scores?.composite_signal ?? 0}
+                    label="Composite Signal"
+                    note="Fundamental · insider · sentiment · macro weighted"
+                  />
+                </div>
+
+                {/* ── TIER 1: Behavioral signal banner ─────────────────── */}
+                <div
+                  className="signal-banner"
+                  style={{ borderLeftColor: sig.color, borderLeftWidth: 3, marginBottom: 24 }}
+                >
+                  <div className="signal-left">
+                    <div className="signal-eyebrow">Behavioral Signal</div>
+                    <div className="signal-state" style={{ color: sig.color }}>
+                      {analysis.behavioral_signal?.state}
+                    </div>
+                  </div>
+                  <div className="signal-exp">
+                    {analysis.behavioral_signal?.explanation}
+                  </div>
+                  <div
+                    className="verdict-pill"
+                    style={{ borderColor: vdict.border, color: vdict.color }}
+                  >
+                    {analysis.verdict}
+                  </div>
+                </div>
+
+                {/* ── Sector metrics as horizontal tiles ───────────────── */}
+                {analysis.sector_metrics && analysis.sector_metrics.length > 0 && (
+                  <div className="panel" style={{ marginBottom: 24 }}>
+                    <div className="panel-head">
+                      Sector Metrics — {analysis.sector || 'Universal'}
+                    </div>
+                    <div className="sector-tile-row">
+                      {analysis.sector_metrics.map((m, i) => {
+                        const sigColor = m.signal === 'positive' ? '#00C896'
+                          : m.signal === 'negative' ? '#C84040'
+                          : m.signal === 'warning'  ? '#E8A838'
+                          : '#4A5A72';
+                        return (
+                          <div key={i} className="sector-tile">
+                            <div className="sector-tile-label">{m.label}</div>
+                            <div className="sector-tile-val" style={{ color: sigColor }}>
+                              {m.value}
+                              <span className="metric-dot" style={{ background: sigColor }} />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* ── Comps Analysis ───────────────────────────────────── */}
+                {compsLoading && (
+                  <div className="comps-section" style={{ padding: '14px 18px' }}>
+                    <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, color: '#2E4A5E', letterSpacing: 0.5 }}>
+                      › fetching peer comparison data...
+                    </span>
+                  </div>
+                )}
+                {!compsLoading && compsData && !compsData.error && (
+                  <CompsTable data={compsData} onCompetitorClick={runAnalysis} />
+                )}
+
+                {/* ── TIER 2: Two-column layout ─────────────────────────── */}
+                <div className="tier2">
+
+                  {/* Left: What Retail Believes */}
+                  <div className="tier2-panel">
+                    <div className="tier2-panel-inner">
+                      <div className="panel-head" style={{ position: 'sticky', top: 0, zIndex: 10 }}>What Retail Believes</div>
+                      <div style={{ padding: '12px 14px' }}>
+                        {(analysis.retail_narrative || []).map((item, i) => (
+                          <Claim
+                            key={i}
+                            item={item}
+                            expanded={expandedClaim === i}
+                            onToggle={() => setExpanded(expandedClaim === i ? null : i)}
+                          />
+                        ))}
+                        {!(analysis.retail_narrative?.length) && (
+                          <div style={{ color: '#2E3E52', fontSize: 11 }}>No narrative data returned.</div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right: What the Data Shows — core fundamentals only */}
+                  <div className="tier2-panel">
+                    <div className="tier2-panel-inner">
+                      <div className="panel-head" style={{ position: 'sticky', top: 0, zIndex: 10 }}>What the Data Shows</div>
+                      <div style={{ padding: '8px 14px' }}>
+                        <table className="ftable">
+                          <tbody>
+                            {[
+                              ['Revenue Growth',    fmt(f.revenue_growth_pct, '%'),  f.revenue_growth_pct, null],
+                              ['Gross Margin',      fmt(f.gross_margin_pct, '%'),    f.gross_margin_pct,   null],
+                              ['FCF Margin',        fmt(f.fcf_margin_pct, '%'),      f.fcf_margin_pct,     null],
+                              ['Rule of 40',        fmt(f.rule_of_40),               f.rule_of_40,         null],
+                              ['P/E (TTM)',         fmt(f.pe_ratio, '×'),            f.pe_ratio,           null],
+                              ['Forward P/E',       fmt(f.forward_pe, '×'),          f.forward_pe,         null],
+                              ['EV/Revenue',        fmt(f.ev_revenue, '×'),          f.ev_revenue,         null],
+                              ['Short Interest',    fmt(f.short_interest_pct, '%'),  f.short_interest_pct, null],
+                            ].map(([label, display, raw]) => (
+                              <tr key={label}>
+                                <td className="ft-key">{label}</td>
+                                <td>
+                                  <div className="ft-val">
+                                    {display}
+                                    <MetricFlag label={label} value={raw} />
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+
+                            {/* Insider Activity — structured badge */}
+                            <tr>
+                              <td className="ft-key">Insider Activity</td>
+                              <td>
+                                <InsiderBadge
+                                  insiderDeep={analysis?.insider_deep}
+                                  insiderActivityStr={f.insider_activity}
+                                />
+                              </td>
+                            </tr>
+
+                            {[
+                              ['Analyst Consensus',  fmt(f.analyst_consensus),                                        null],
+                              ['Analyst Target',     f.analyst_target ? `$${f.analyst_target}` : '—',                null],
+                              ['Earnings Beat Rate', fmt(f.earnings_beat_rate),                                       null],
+                            ].map(([label, display]) => (
+                              <tr key={label}>
+                                <td className="ft-key">{label}</td>
+                                <td>
+                                  <div className="ft-val">{display}</div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* ── Retail Narrative Feed (between tier 2 and tier 3) ─── */}
+                {allPosts.length > 0 && (
+                  <div className="panel" style={{ marginBottom: 24 }}>
+                    <div className="panel-head" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span>
+                        Retail Narrative Feed
+                        {analysis.social?.reddit_posts != null && (
+                          <span style={{ color: '#2E3E52', marginLeft: 8 }}>
+                            Reddit: {analysis.social.reddit_posts} posts
+                          </span>
+                        )}
+                        {analysis.social?.stocktwits_watchers != null && (
+                          <span style={{ color: '#2E3E52', marginLeft: 8 }}>
+                            ST watchers: {(analysis.social.stocktwits_watchers || 0).toLocaleString()}
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                    <div className="social-filter-row">
+                      {['all', 'bullish', 'bearish', 'neutral'].map(f => (
+                        <button
+                          key={f}
+                          className={`social-filter-btn${socialFilter === f ? ' social-filter-active' : ''}`}
+                          onClick={() => setSocialFilter(f)}
+                        >
+                          {f}
+                        </button>
+                      ))}
+                    </div>
+                    <div style={{ padding: '10px 14px' }}>
+                      {filteredPosts.length === 0 && (
+                        <div style={{ color: '#2E3E52', fontSize: 11 }}>No posts match this filter.</div>
+                      )}
+                      {filteredPosts.map((p, i) => {
+                        const isReddit = p._source === 'reddit';
+                        const sentiment = (p.sentiment || 'neutral').toLowerCase();
+                        const leftBorder = sentiment === 'bullish' ? '#00C896' : sentiment === 'bearish' ? '#C84040' : '#18243A';
+                        return (
+                          <div key={i} className="social-post" style={{ borderLeftColor: leftBorder }}>
+                            {/* Line 1: source + flair + upvotes + relevance score */}
+                            <div className="social-post-line1">
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                                <span className={`social-source-tag ${isReddit ? 'social-tag-reddit' : 'social-tag-stocktwits'}`}>
+                                  {isReddit ? `r/${p.subreddit || 'reddit'}` : 'StockTwits'}
+                                </span>
+                                {p.flair && (
+                                  <span style={{
+                                    fontFamily: "'IBM Plex Mono', monospace", fontSize: 8,
+                                    padding: '1px 5px', borderRadius: 2,
+                                    border: '1px solid #18243A', color: '#4A9FFF', background: 'rgba(74,159,255,0.06)',
+                                    letterSpacing: '0.5px',
+                                  }}>
+                                    {p.flair}
+                                  </span>
+                                )}
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                {(p.score != null || p.upvotes != null) && (
+                                  <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 9, color: '#3A4A5A' }}>
+                                    ↑{p.score ?? p.upvotes}
+                                  </span>
+                                )}
+                                {p.relevance_score != null && (
+                                  <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 8, color: '#1E2E40' }}>
+                                    rel:{p.relevance_score}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            {/* Line 2: title */}
+                            <div className="social-post-body" style={{ fontWeight: 400, fontSize: 12, margin: '4px 0' }}>
+                              {isReddit ? p.title : p.body}
+                            </div>
+                            {/* Line 3: sentiment + top comment snippet */}
+                            <div className="social-post-line3">
+                              <span className={`social-sentiment-tag ${sentiment === 'bullish' ? 'v-sup' : sentiment === 'bearish' ? 'v-uns' : ''}`}>
+                                {sentiment}
+                              </span>
+                              {isReddit && p.top_comment && (
+                                <span style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 10, color: '#3A4A5A', fontStyle: 'italic', maxWidth: '70%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  "{p.top_comment.slice(0, 100)}"
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {/* Summary row */}
+                      {analysis?.social?.signal_note && (
+                        <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 9, color: '#2E3E52', marginTop: 10, paddingTop: 8, borderTop: '1px solid #111A2E', letterSpacing: 0.3 }}>
+                          {analysis.social.signal_note}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* ── TIER 3: Collapsible panels ────────────────────────── */}
+
+                {/* Valuation Intelligence */}
+                {(f.implied_revenue_cagr_pct != null || f.trailing_revenue_cagr_pct != null || f.dcf_gap_pct != null) && (
+                  <CollapsiblePanel title="Valuation Intelligence" defaultOpen={true}>
+                    <table className="val-table">
+                      <tbody>
+                        {f.implied_revenue_cagr_pct != null && (
+                          <tr>
+                            <td className="val-key">Implied 10Y CAGR</td>
+                            <td>
+                              <div className="val-val">
+                                {f.implied_revenue_cagr_pct}%
+                                <MetricFlag label="Implied 10Y CAGR" value={f.implied_revenue_cagr_pct} />
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                        {f.trailing_revenue_cagr_pct != null && (
+                          <tr>
+                            <td className="val-key">Trailing 3Y CAGR</td>
+                            <td>
+                              <div className="val-val">{f.trailing_revenue_cagr_pct}%</div>
+                            </td>
+                          </tr>
+                        )}
+                        {f.dcf_gap_pct != null && (
+                          <tr>
+                            <td className="val-key">DCF Gap</td>
+                            <td>
+                              <div className="val-val">
+                                {f.dcf_gap_pct > 0 ? '+' : ''}{f.dcf_gap_pct}pp
+                                <MetricFlag label="DCF Gap" value={f.dcf_gap_pct} />
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                    {f.dcf_plain_english && (
+                      <div className="val-note">{f.dcf_plain_english}</div>
+                    )}
+                  </CollapsiblePanel>
+                )}
+
+                {/* Macro Sensitivity */}
+                {macroRows.length > 0 && (
+                  <CollapsiblePanel title="Macro Sensitivity" defaultOpen={true}>
+                    <div className="macro-sens-verdict">
+                      Macro environment: {headwinds} headwind{headwinds !== 1 ? 's' : ''}, {tailwinds} tailwind{tailwinds !== 1 ? 's' : ''}
+                    </div>
+                    {macroRows.map((row, i) => {
+                      const severity = parseMacroSeverity(row.val);
+                      const isHW = isMacroHeadwind(row.val);
+                      const badgeColor = severity === 'HIGH'
+                        ? (isHW ? '#C84040' : '#00C896')
+                        : severity === 'MEDIUM' ? '#E8A838' : '#4A5A72';
+                      const badgeBorder = severity === 'HIGH'
+                        ? (isHW ? 'rgba(200,64,64,0.3)' : 'rgba(0,200,150,0.3)')
+                        : severity === 'MEDIUM' ? 'rgba(232,168,56,0.3)' : '#18243A';
+                      const badgeBg = severity === 'HIGH'
+                        ? (isHW ? 'rgba(200,64,64,0.06)' : 'rgba(0,200,150,0.06)')
+                        : severity === 'MEDIUM' ? 'rgba(232,168,56,0.06)' : 'transparent';
+                      const headline = truncateWords(row.val, 10);
+                      return (
+                        <div key={i} className="macro-sens-row">
+                          <span className="macro-sens-name">{row.name}</span>
+                          <span
+                            className="macro-sens-badge"
+                            style={{ color: badgeColor, borderColor: badgeBorder, background: badgeBg }}
+                          >
+                            {severity}
+                          </span>
+                          <div className="tooltip-wrap">
+                            <span className="macro-sens-headline">{headline}</span>
+                            <div className="tooltip-box">{row.val}</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </CollapsiblePanel>
+                )}
+
+                {/* Equity Dilution */}
+                {(f.sbc_pct_revenue != null || f.sbc_adjusted_fcf_margin_pct != null || f.share_count_growth_pct != null) && (
+                  <CollapsiblePanel title="Equity Dilution" defaultOpen={false}>
+                    <table className="val-table">
+                      <tbody>
+                        {f.sbc_pct_revenue != null && (
+                          <tr>
+                            <td className="val-key">SBC / Revenue</td>
+                            <td>
+                              <div className="val-val">
+                                {f.sbc_pct_revenue}%
+                                <MetricFlag label="SBC / Revenue" value={f.sbc_pct_revenue} />
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                        {f.sbc_adjusted_fcf_margin_pct != null && (
+                          <tr>
+                            <td className="val-key">SBC-Adj FCF Margin</td>
+                            <td>
+                              <div className="val-val">
+                                {f.sbc_adjusted_fcf_margin_pct}%
+                                <MetricFlag label="SBC-Adj FCF Margin" value={f.sbc_adjusted_fcf_margin_pct} />
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                        {f.share_count_growth_pct != null && (
+                          <tr>
+                            <td className="val-key">Share Count Growth</td>
+                            <td>
+                              <div className="val-val">
+                                {f.share_count_growth_pct > 0 ? '+' : ''}{f.share_count_growth_pct}%
+                                <MetricFlag label="Share Count Growth" value={f.share_count_growth_pct} />
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                    {f.dilution_flag && (
+                      <div className="val-note" style={{ color: f.share_count_growth_pct > 3 ? '#C84040' : '#4A5A72' }}>
+                        {f.dilution_flag}
+                      </div>
+                    )}
+                  </CollapsiblePanel>
+                )}
+
+                {/* Net Revenue Retention — only if nrr_applicable */}
+                {f.nrr_applicable === true && (
+                  <CollapsiblePanel title="Net Revenue Retention" defaultOpen={false}>
+                    <table className="val-table">
+                      <tbody>
+                        {f.nrr_pct != null && (
+                          <tr>
+                            <td className="val-key">NRR Estimate</td>
+                            <td>
+                              <div className="val-val">
+                                {f.nrr_pct}%
+                                <MetricFlag label="NRR Estimate" value={f.nrr_pct} />
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                        {f.nrr_trend && (
+                          <tr>
+                            <td className="val-key">NRR Trend</td>
+                            <td>
+                              <div className="val-val">
+                                {f.nrr_trend.charAt(0).toUpperCase() + f.nrr_trend.slice(1)}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                    {f.nrr_benchmark && (
+                      <div className="val-note" style={{ color: f.nrr_pct < 100 ? '#C84040' : f.nrr_pct < 110 ? '#E8A838' : '#00C896' }}>
+                        {f.nrr_benchmark}
+                      </div>
+                    )}
+                  </CollapsiblePanel>
+                )}
+
+                {/* ── Data sources ──────────────────────────────────────── */}
+                {parallelSources.length > 0 && (
+                  <div className="panel" style={{ marginBottom: 24 }}>
+                    <div className="panel-head">Data Sources</div>
+                    <div className="source-headline">
+                      {parallelSources.filter(s => s.ok).length}/{parallelSources.length} sources available
+                    </div>
+                    <div className="source-grid">
+                      {parallelSources.map((s, i) => {
+                        let tooltip = '';
+                        if (!s.ok) {
+                          if (s.source.includes('StockTwits')) tooltip = 'Rate limited — retry in a few minutes';
+                          else if (s.source.includes('Google Trends')) tooltip = 'Install pytrends or rate limited';
+                          else tooltip = 'Source unavailable';
+                        }
+                        return (
+                          <span
+                            key={i}
+                            className={`source-chip ${s.ok ? 'source-chip-ok' : 'source-chip-fail'}`}
+                            title={tooltip || undefined}
+                          >
+                            {s.ok ? '✓' : '✗'} {s.source}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* ── Verdict card ──────────────────────────────────────── */}
+                <div
+                  className="verdict-card"
+                  style={{ borderColor: '#18243A', borderLeftColor: vdict.color }}
+                >
+                  {parallelSources.length > 0 && (
+                    <span
+                      className="verdict-confidence-pill"
+                      style={{ color: confidenceColor, borderColor: confidenceBorder, background: 'transparent' }}
+                    >
+                      {confidenceLabel}
+                    </span>
+                  )}
+                  <div className="verdict-action" style={{ color: vdict.color }}>
+                    {analysis.verdict}
+                  </div>
+                  {subhead && (
+                    <div className="verdict-subhead">{subhead}</div>
+                  )}
+                  <div className="verdict-body">{rationale}</div>
+                </div>
+
+                {/* ── Agent Reasoning Trace ─────────────────────────────── */}
+                <div className="trace-wrap">
+                  <button className="trace-toggle" onClick={() => setTraceOpen(o => !o)}>
+                    <span>Agent Reasoning Trace — {traceSteps.length} Steps</span>
+                    <span>{traceOpen ? '▲ collapse' : '▼ expand'}</span>
+                  </button>
+
+                  {traceOpen && (
+                    <>
+                      <div className="trace-summary">
+                        Analysis completed in ~{traceEstimatedSecs}s across {traceSteps.length} steps
+                      </div>
+                      <div className="trace-body">
+                        {traceSteps.map((s, idx) => {
+                          const cat = getToolCategory(s.tool);
+                          const catColors = TOOL_CATEGORY_COLORS[cat] || TOOL_CATEGORY_COLORS.data;
+                          const stepOpen = !!expandedTraceSteps[idx];
+                          return (
+                            <div key={s.step} className="trace-step">
+                              <div
+                                className="trace-step-header"
+                                onClick={() => setExpandedTraceSteps(prev => ({ ...prev, [idx]: !prev[idx] }))}
+                              >
+                                <span className="ts-num">[{String(s.step).padStart(2, '0')}]</span>
+                                <span
+                                  className="ts-tool-pill"
+                                  style={{ color: catColors.color, borderColor: catColors.border, background: catColors.bg }}
+                                >
+                                  {s.tool}
+                                </span>
+                                <span className="ts-summary">{s.output_summary}</span>
+                                <span className="ts-expand-btn">{stepOpen ? '▲' : '▼'}</span>
+                              </div>
+                              {stepOpen && (
+                                <>
+                                  <div className="ts-out">→ {s.output_summary}</div>
+                                  <div className="ts-reason">// {s.reasoning}</div>
+                                </>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* ── Data note ─────────────────────────────────────────── */}
+                <div className="data-note">
+                  Price: Yahoo Finance · Filings: SEC EDGAR (free API) · Macro: FRED St. Louis Fed · Sentiment: Reddit + StockTwits · Trends: Google · Synthesis: claude-sonnet-4-6
+                </div>
+
+                </div>
+                )}
+
+                {/* ════════════════════════════ PREDICT TAB ═══════════════ */}
+                {activeTab === 'predict' && (
+                  <PredictTab
+                    predictiveData={predictiveData}
+                    loading={predictiveLoading}
+                    ticker={ticker}
+                    sector={analysis?.sector || null}
+                    validationData={validationData}
+                    onValidate={runValidation}
+                    validating={validating}
+                  />
+                )}
+
+              </div>
+            )}
+
+            {/* Empty state */}
+            {!analysis && !loading && !error && (
+              <div className="empty-state">
+                <div className="empty-title">select a ticker and run analysis</div>
+                <div className="empty-sub">{TICKERS.join(' · ')}</div>
+              </div>
+            )}
+
+          </main>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>

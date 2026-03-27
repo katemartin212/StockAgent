@@ -1,0 +1,15 @@
+anthropic
+yfinance
+python-dotenv
+feedparser
+beautifulsoup4
+lxml
+requests
+pandas
+fastapi
+uvicorn[standard]
+praw
+pytrends
+scikit-learn
+scipy
+statsmodels
