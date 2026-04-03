@@ -10,7 +10,7 @@ Production-grade IT sector stock research agent with behavioral finance analysis
   3. get_company_info          — sector, employees, CEO, HQ (yfinance)
   4. get_financial_data        — Rule of 40, margins, valuation multiples (yfinance)
   5. get_news_sentiment        — headlines + bullish/bearish score (Yahoo Finance RSS)
-  6. get_insider_trades        — Form 4 buy/sell activity (OpenInsider, free scrape)
+  6. get_insider_trades        — Form 4 buy/sell activity (SEC EDGAR free API)
   7. get_earnings_surprise     — EPS beat/miss history (yfinance)
   8. get_reddit_sentiment      — r/wallstreetbets + r/investing post volume & tone
   9. get_net_revenue_retention — NRR proxy via deferred revenue + same-quarter YoY (yfinance)
@@ -129,7 +129,7 @@ REPORT FORMAT  (use this exact structure for every analysis)
 **💡 Rationale:** 2–3 sentences grounded in the divergence between perception and reality.
 
 ---
-*Sources: Yahoo Finance (live) · OpenInsider (free) · Reddit public API*
+*Sources: Yahoo Finance (live) · SEC EDGAR (free API) · Reddit public API*
 """
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -412,16 +412,15 @@ def get_news_sentiment(ticker: str) -> str:
 
 
 # ── 6. Insider Trades ─────────────────────────────────────────────────────────
-# Source: OpenInsider (openinsider.com) — free, no API key required (scraped).
-# OpenInsider aggregates SEC Form 4 filings in near real-time.
+# Source: SEC EDGAR Form 4 API — free, no API key required.
 
 insider_trades_tool = {
     "name": "get_insider_trades",
     "description": (
-        "Fetch recent Form 4 insider buying and selling for a stock from OpenInsider "
+        "Fetch recent Form 4 insider buying and selling for a stock from SEC EDGAR "
         "(last 90 days). Returns purchase/sale counts, net insider sentiment "
-        "(bullish/bearish/neutral), and a list of recent transactions. "
-        "Heavy purchasing by C-suite insiders is a strong bullish signal."
+        "(bullish/bearish/neutral), weighted signal, and a list of recent transactions. "
+        "Open-market purchases by C-suite insiders are the strongest bullish signal."
     ),
     "input_schema": {
         "type": "object",
@@ -433,65 +432,26 @@ insider_trades_tool = {
 }
 
 def get_insider_trades(ticker: str) -> str:
+    from data_sources.sec_edgar import get_edgar_form4
     try:
-        ticker = ticker.upper().strip()
-        # OpenInsider screener: last 90 days, purchases (xp=1) and sales (xs=1)
-        url = (
-            f"https://openinsider.com/screener?s={ticker}"
-            "&fd=90&xp=1&xs=1&sortcol=0&cnt=20&Action=Submit"
-        )
-        headers = {"User-Agent": "Mozilla/5.0 StockResearchBot/1.0"}
-        resp = requests.get(url, headers=headers, timeout=12)
-        resp.raise_for_status()
-        soup = BeautifulSoup(resp.text, "lxml")
-
-        table = soup.find("table", class_="tinytable")
-        if not table:
-            return json.dumps({
-                "ticker": ticker,
-                "trades_found": 0,
-                "insider_sentiment": "neutral",
-                "message": "No insider trades in last 90 days.",
-                "data_source": "OpenInsider (free, no key required)",
-            })
-
-        # Column layout: [X, Filing Date, Trade Date, Ticker, Company,
-        #                  Insider Name, Title, Trade Type, Price, Qty,
-        #                  Owned, ΔOwn, Value]
-        trades = []
-        for row in table.find_all("tr")[1:]:   # skip header row
-            cols = row.find_all("td")
-            if len(cols) < 13:
-                continue
-            trades.append({
-                "filing_date": cols[1].text.strip(),
-                "trade_date": cols[2].text.strip(),
-                "insider": cols[5].text.strip(),
-                "title": cols[6].text.strip(),
-                "trade_type": cols[7].text.strip(),
-                "price": cols[8].text.strip(),
-                "quantity": cols[9].text.strip(),
-                "value": cols[12].text.strip(),
-            })
-
-        # "P - Purchase" = open-market buy (most significant signal)
-        # "S - Sale" = open-market sale  |  "A - Award" = stock grant (ignore for signal)
-        purchases = [t for t in trades if "P - Purchase" in t["trade_type"]]
-        sales = [t for t in trades if "S - Sale" in t["trade_type"] and "OE" not in t["trade_type"]]
-        awards = [t for t in trades if "A - Award" in t["trade_type"]]
-
+        result = get_edgar_form4(ticker.upper().strip())
+        if "error" in result:
+            return json.dumps({"error": result["error"], "ticker": ticker})
+        filings = result.get("recent_filings", [])
+        purchases = [f for f in filings if f.get("transaction_code") == "P"]
+        sales     = [f for f in filings if f.get("transaction_code") == "S"]
         net = len(purchases) - len(sales)
         sentiment = "bullish" if net > 0 else "bearish" if net < 0 else "neutral"
-
         return json.dumps({
-            "ticker": ticker,
-            "trades_found": len(trades),
-            "purchases": len(purchases),
-            "sales": len(sales),
-            "awards_grants": len(awards),
+            "ticker":            ticker.upper(),
+            "trades_found":      result.get("filings_last_90_days", 0),
+            "purchases":         len(purchases),
+            "sales":             len(sales),
             "insider_sentiment": sentiment,
-            "recent_trades": trades[:8],
-            "data_source": "OpenInsider (free, no key required)",
+            "weighted_signal":   result.get("weighted_signal"),
+            "insider_signal":    result.get("insider_signal"),
+            "recent_trades":     filings[:8],
+            "data_source":       "SEC EDGAR Form 4 (free API)",
         })
     except Exception as e:
         return json.dumps({"error": f"Insider data fetch failed: {e}"})

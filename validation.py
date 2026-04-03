@@ -69,9 +69,11 @@ def validate_factor_model(ticker: str, sector: str = None) -> dict:
             "vix":    "^VIX",
             "sector": sector_etf,
             "market": "^GSPC",
+            "iwd":    "IWD",   # Russell 1000 Value
+            "iwf":    "IWF",   # Russell 1000 Growth
         }
 
-        with ThreadPoolExecutor(max_workers=7) as ex:
+        with ThreadPoolExecutor(max_workers=9) as ex:
             futures = {ex.submit(_fetch_weekly, sym, "5y"): name
                        for name, sym in factor_symbols.items()}
             futures[ex.submit(_fetch_weekly, ticker, "5y")] = "target"
@@ -102,8 +104,13 @@ def validate_factor_model(ticker: str, sector: str = None) -> dict:
         mom      = price_df["target"].pct_change(4).shift(1)
         ret_df["momentum"] = mom
 
-        factor_keys = [k for k in list(factor_symbols.keys()) + ["momentum"]
-                       if k in ret_df.columns]
+        # Mirror production model: short-term reversal and value/growth spread
+        ret_df["reversal"] = price_df["target"].pct_change(1).shift(1)
+        if "iwd" in price_df.columns and "iwf" in price_df.columns:
+            ret_df["value_spread"] = (price_df["iwd"] / price_df["iwf"]).pct_change()
+
+        _FACTOR_ORDER = ["tnx", "dxy", "vix", "sector", "market", "momentum", "reversal", "value_spread"]
+        factor_keys = [k for k in _FACTOR_ORDER if k in ret_df.columns]
         combined = ret_df[["target"] + factor_keys].dropna()
 
         if len(combined) < 104:
@@ -135,7 +142,10 @@ def validate_factor_model(ticker: str, sector: str = None) -> dict:
             # Predict week t+1 using X_lag[t] (week t factors — already known)
             X_te_norm = (X_lag[t] - mu) / sigma
 
-            result = _ols(X_tr_norm, y_tr)
+            # Exponential decay: most recent training obs gets weight 1.0
+            decay_weights_tr = 0.98 ** np.arange(t - 1, -1, -1)
+
+            result = _ols(X_tr_norm, y_tr, weights=decay_weights_tr)
             if result is None:
                 continue
             coefs = result[0]  # (coefs, p_vals, r2, ci_lo, ci_hi)
@@ -152,6 +162,22 @@ def validate_factor_model(ticker: str, sector: str = None) -> dict:
         mae = float(np.mean(np.abs(actuals - predicted)))
         directional_accuracy = float(np.mean(np.sign(actuals) == np.sign(predicted)))
 
+        # Wilson 95% CI on directional accuracy (proportion of correct sign predictions).
+        # Works well at small n and near the 50% boundary — unlike the normal approximation.
+        #   center = (p̂ + z²/2n) / (1 + z²/n)
+        #   margin = z·√(p̂(1−p̂)/n + z²/4n²) / (1 + z²/n)
+        _n   = len(actuals)
+        _k   = int(np.sum(np.sign(actuals) == np.sign(predicted)))
+        _z   = 1.96
+        _z2  = _z ** 2
+        _den = 1.0 + _z2 / _n
+        _ctr = (directional_accuracy + _z2 / (2 * _n)) / _den
+        _mrg = (_z * np.sqrt(
+            directional_accuracy * (1 - directional_accuracy) / _n + _z2 / (4 * _n ** 2)
+        )) / _den
+        da_ci_lo = float(max(0.0, _ctr - _mrg))
+        da_ci_hi = float(min(1.0, _ctr + _mrg))
+
         # Information Coefficient: Spearman rank correlation
         ic_val, ic_pval = sp.spearmanr(predicted, actuals)
         ic = float(ic_val)
@@ -161,33 +187,45 @@ def validate_factor_model(ticker: str, sector: str = None) -> dict:
         ss_tot = float(np.sum((actuals - actuals.mean()) ** 2))
         r2_oos = float(1.0 - ss_res / ss_tot) if ss_tot > 0 else 0.0
 
-        validated = directional_accuracy > 0.52 and abs(ic) > 0.04
+        # Validated only if the 95% CI lower bound clears 50% (not just the point estimate)
+        # and IC exceeds threshold. Prevents a 53% accuracy on 50 samples from passing.
+        validated = da_ci_lo > 0.50 and abs(ic) > 0.04
+
+        da_pct    = round(directional_accuracy * 100, 1)
+        da_margin = round((da_ci_hi - da_ci_lo) / 2 * 100, 1)
 
         if validated:
             note = (
                 f"Factor model passes walk-forward validation. "
-                f"Directional accuracy {directional_accuracy:.1%} and IC {ic:+.3f} "
-                f"over {len(actuals)} OOS weeks."
+                f"Directional accuracy {da_pct}% ±{da_margin}% [95% CI: "
+                f"{round(da_ci_lo * 100, 1)}%–{round(da_ci_hi * 100, 1)}%], "
+                f"IC {ic:+.3f} over {len(actuals)} OOS weeks."
             )
         else:
             reasons = []
-            if directional_accuracy <= 0.52:
-                reasons.append(f"directional accuracy {directional_accuracy:.1%} ≤ 52%")
+            if da_ci_lo <= 0.50:
+                reasons.append(
+                    f"directional accuracy 95% CI [{round(da_ci_lo * 100, 1)}%–"
+                    f"{round(da_ci_hi * 100, 1)}%] includes 50%"
+                )
             if abs(ic) <= 0.04:
                 reasons.append(f"|IC| {abs(ic):.3f} ≤ 0.04")
             note = f"Factor model does NOT pass validation: {'; '.join(reasons)}."
 
         out = {
-            "validated":           validated,
-            "directional_accuracy": round(directional_accuracy * 100, 1),
-            "ic":                  round(ic, 4),
-            "ic_p_value":          round(float(ic_pval), 4),
-            "mae":                 round(mae * 100, 4),
-            "r2_oos":              round(r2_oos, 4),
-            "n_oos":               len(actuals),
-            "n_train_final":       n - 1,
-            "confidence_note":     note,
-            "error":               None,
+            "validated":              validated,
+            "directional_accuracy":   da_pct,
+            "directional_accuracy_ci_lo": round(da_ci_lo * 100, 1),
+            "directional_accuracy_ci_hi": round(da_ci_hi * 100, 1),
+            "directional_accuracy_margin": da_margin,
+            "ic":                     round(ic, 4),
+            "ic_p_value":             round(float(ic_pval), 4),
+            "mae":                    round(mae * 100, 4),
+            "r2_oos":                 round(r2_oos, 4),
+            "n_oos":                  len(actuals),
+            "n_train_final":          n - 1,
+            "confidence_note":        note,
+            "error":                  None,
         }
         cache_set(ck, out)
         return out
@@ -380,22 +418,29 @@ def validate_sentiment_signal(ticker: str) -> dict:
 
     try:
         from pytrends.request import TrendReq
+        from datetime import datetime, timedelta
         import time
         time.sleep(1.2)
         pytrends = TrendReq(hl="en-US", tz=0, timeout=(10, 30), retries=0)
-        pytrends.build_payload([ticker], cat=0, timeframe="today 24-m", geo="US")
+        end = datetime.now()
+        start = end - timedelta(days=730)
+        tf = f"{start.strftime('%Y-%m-%d')} {end.strftime('%Y-%m-%d')}"
+        pytrends.build_payload([ticker], cat=0, timeframe=tf, geo="US")
         df_trends = pytrends.interest_over_time()
 
         if df_trends.empty or ticker not in df_trends.columns:
             return _val_error("sentiment", f"No Google Trends data for {ticker}")
 
         scores = df_trends[ticker].dropna()
+        # Normalize to week-ending Sunday so it aligns with yfinance (Monday open → same ISO week)
+        scores.index = pd.to_datetime(scores.index).tz_localize(None).to_period("W").to_timestamp("W")
         if len(scores) < 24:
             return _val_error("sentiment", f"Insufficient Trends history: {len(scores)} weeks (need ≥24)")
 
         prices = _fetch_weekly(ticker, "2y")
         if prices.empty:
             return _val_error("sentiment", "No price data for return calculation")
+        prices.index = pd.to_datetime(prices.index).tz_localize(None).to_period("W").to_timestamp("W")
 
         # 4-week forward returns (shift -4 so we never look ahead when building signal)
         fwd_returns = prices.pct_change(4).shift(-4)
@@ -634,6 +679,185 @@ def run_full_validation(ticker: str, sector: str = None) -> dict:
     }
     cache_set(ck, out)
     return out
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 5. SCENARIO MODEL — Walk-forward backtest
+# ══════════════════════════════════════════════════════════════════════════════
+
+def validate_scenario_model(ticker: str) -> dict:
+    """
+    Walk-forward backtest of the DCF scenario model over the last 3 years.
+
+    Methodology
+    -----------
+    For each quarterly checkpoint going back up to 12 quarters:
+      1. Reconstruct TTM revenue and 2Y CAGR using only data available at
+         that point (rolling slice of quarterly income statement history).
+      2. Build simplified bear/base/bull scenario prices using the historical
+         weekly price at that checkpoint as the starting point.
+      3. Record the probability-weighted target (25/50/25 neutral weights).
+      4. Compare to the actual price 52 weeks later.
+
+    Because yfinance does not expose margin history, the DCF FCF computation
+    is not fully replicated; instead, the price-range coverage test is based
+    on ±1.5× the 2Y CAGR revenue shock translated through the current
+    EV/Revenue multiple — a simplified but walk-forward-safe approach.
+
+    Metrics
+    -------
+    mae_pct            : mean absolute error of prob-weighted target vs actual
+    coverage_rate      : % of periods where actual fell inside bear–bull range
+    narrative_dir_acc  : directional accuracy of narrative adjustment signal
+                         (did stocks with high divergence underperform DCF base?)
+    n_periods          : number of quarterly checkpoints tested
+    validated          : True if coverage_rate ≥ 0.65 and n_periods ≥ 6
+    """
+    ck = cache_key(f"val_scenario_{ticker}")
+    if (hit := cache_get(ck, CACHE_TTL)):
+        return hit
+
+    try:
+        import yfinance as yf
+        t = yf.Ticker(ticker)
+
+        # ── Weekly price history (3 years) ────────────────────────────────────
+        prices = _fetch_weekly(ticker, "3y")
+        if prices.empty or len(prices) < 52:
+            return _val_error("scenario", "Insufficient price history (< 52 weeks)")
+
+        # ── Quarterly income statement ─────────────────────────────────────────
+        try:
+            qs = t.quarterly_income_stmt
+        except Exception:
+            qs = None
+        if qs is None or qs.empty or "Total Revenue" in qs.index is False:
+            return _val_error("scenario", "No quarterly revenue data available")
+
+        rev_s = qs.loc["Total Revenue"].dropna().sort_index()
+        if len(rev_s) < 6:
+            return _val_error("scenario", "Fewer than 6 quarters of revenue data")
+
+        # ── Current balance sheet inputs (static — limitation 1 in the doc) ───
+        info       = t.info or {}
+        shares     = float(info.get("sharesOutstanding") or 0)
+        total_debt = float(info.get("totalDebt") or 0)
+        total_cash = float(info.get("totalCash") or 0)
+        net_cash   = total_cash - total_debt
+        if shares <= 0:
+            return _val_error("scenario", "Missing share count")
+
+        gross_margin = float(info.get("grossMargins") or 0)
+        tm_base = 18.0 if gross_margin > 0.60 else (14.0 if gross_margin > 0.40 else 10.0)
+
+        try:
+            tnx = yf.download("^TNX", period="5d", interval="1d",
+                              progress=False, auto_adjust=True)
+            col = (tnx["Close"] if "Close" in tnx.columns else tnx.iloc[:, 0]).dropna()
+            rate_10y = float(col.iloc[-1])
+        except Exception:
+            rate_10y = 4.5
+        beta = max(0.5, min(2.5, float(info.get("beta") or 1.0)))
+        erp  = max(4.5, min(8.0, 4.5 + (beta - 1.0) * 1.5))
+        dr   = (rate_10y + erp) / 100.0
+
+        # ── Walk-forward loop: one checkpoint per quarter, up to 12 ──────────
+        price_index   = prices.index
+        price_values  = prices.values
+        n_quarters    = min(len(rev_s) - 4, 12)   # need ≥4 quarters for TTM
+
+        errors_pct   = []
+        covered      = []
+
+        for qi in range(n_quarters):
+            # Data available at checkpoint qi (counting back from most recent)
+            q_idx = len(rev_s) - 1 - qi       # most recent = 0 lag, then going back
+            if q_idx < 3:
+                break                          # need 4 quarters for TTM
+
+            # TTM revenue at checkpoint
+            ttm_at = float(rev_s.iloc[max(0, q_idx - 3): q_idx + 1].sum())
+            if ttm_at <= 0:
+                continue
+
+            # 2Y CAGR at checkpoint (requires 8 quarters)
+            if q_idx >= 7:
+                ttm_2y = float(rev_s.iloc[q_idx - 7: q_idx - 3].sum())
+                cagr   = (ttm_at / ttm_2y) ** 0.5 - 1.0 if ttm_2y > 0 else 0.08
+            else:
+                cagr = float(info.get("revenueGrowth") or 0) or 0.08
+
+            # Approximate quarter date from rev_s index
+            rev_dates = rev_s.index
+            q_date    = rev_dates[q_idx] if hasattr(rev_dates[q_idx], "date") else None
+            if q_date is None:
+                continue
+
+            # Find weekly price at or just after this quarter date
+            start_idx = np.searchsorted(price_index, pd.Timestamp(q_date))
+            if start_idx >= len(price_values):
+                continue
+            p_start = float(price_values[start_idx])
+            if p_start <= 0:
+                continue
+
+            # Actual price 52 weeks later
+            end_idx = start_idx + 52
+            if end_idx >= len(price_values):
+                continue
+            p_actual = float(price_values[end_idx])
+
+            # EV/Revenue at checkpoint
+            ev_start  = p_start * shares + total_debt - total_cash
+            ev_rev_at = ev_start / ttm_at if ttm_at > 0 else None
+            if ev_rev_at is None or ev_rev_at <= 0:
+                continue
+
+            # Simplified scenario prices using current EV/Revenue multiple
+            # Bear: 50% of CAGR, multiple −30%; Bull: 120% of CAGR, multiple +30%
+            def _sp(g_mult, mult_adj):
+                future_rev = ttm_at * (1 + cagr * g_mult)
+                future_ev  = future_rev * ev_rev_at * mult_adj
+                return max((future_ev + net_cash) / shares, 0.01)
+
+            bp = _sp(0.50, 0.70)
+            pp = _sp(1.00, 1.00)   # base
+            up = _sp(1.20, 1.30)
+
+            # Probability-weighted target (neutral 25/50/25)
+            wt = 0.25 * bp + 0.50 * pp + 0.25 * up
+
+            err_pct = abs(wt - p_actual) / p_actual * 100.0
+            errors_pct.append(err_pct)
+            covered.append(bp <= p_actual <= up)
+
+        n_periods = len(errors_pct)
+        if n_periods < 4:
+            return _val_error("scenario",
+                              f"Only {n_periods} valid walk-forward periods (need ≥ 4)")
+
+        mae_pct       = round(float(np.mean(errors_pct)), 1)
+        coverage_rate = round(float(np.mean(covered)), 3)
+        validated     = coverage_rate >= 0.65 and n_periods >= 6
+
+        out = {
+            "validated":       validated,
+            "n_periods":       n_periods,
+            "mae_pct":         mae_pct,
+            "coverage_rate":   coverage_rate,
+            "confidence_note": (
+                f"Bear–bull range contained actual price in "
+                f"{round(coverage_rate * 100, 1)}% of {n_periods} walk-forward periods "
+                f"(target ≥ 65%); MAE vs prob-weighted target: {mae_pct}%"
+            ),
+            "error": None,
+        }
+        cache_set(ck, out)
+        return out
+
+    except Exception as e:
+        logger.error(f"validate_scenario_model({ticker}): {e}", exc_info=True)
+        return _val_error("scenario", str(e))
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

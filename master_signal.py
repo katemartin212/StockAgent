@@ -32,7 +32,6 @@ _get_edgar_financials      = _safe_import("data_sources.sec_edgar",           "g
 _get_edgar_form4           = _safe_import("data_sources.sec_edgar",           "get_edgar_form4")
 _get_edgar_filings         = _safe_import("data_sources.sec_edgar",           "get_edgar_filings")
 _get_fred_macro            = _safe_import("data_sources.fred_macro",          "get_fred_macro")
-_get_open_insider          = _safe_import("data_sources.open_insider",        "get_open_insider")
 _get_reddit_sentiment      = _safe_import("data_sources.reddit_sentiment",    "get_reddit_sentiment")
 _get_stocktwits_sentiment  = _safe_import("data_sources.stocktwits_sentiment","get_stocktwits_sentiment")
 _get_search_interest       = _safe_import("data_sources.trends_signal",       "get_search_interest")
@@ -122,28 +121,18 @@ def _fundamental_score(edgar: dict) -> float | None:
     return round(composite, 1)
 
 
-def _insider_score(form4: dict, open_insider: dict) -> float:
+def _insider_score(form4: dict) -> float:
     """
-    Insider conviction score 0-100.
-    Combines weighted signal from EDGAR Form 4 + OpenInsider cluster signal.
+    Insider conviction score 0-100 based on EDGAR Form 4 weighted signal.
+    weighted_signal: positive = open-market buying, negative = selling.
     """
     score = 50.0   # neutral baseline
 
-    # EDGAR Form 4 weighted signal
     ws = (form4 or {}).get("weighted_signal")
     if ws is not None:
         # weighted_signal: positive = buying, negative = selling
         # Map to 0-100: 0→25, neutral→50, strong buy→90
         score += min(40, max(-40, ws * 8))
-
-    # OpenInsider cluster buy
-    oi_signal = (open_insider or {}).get("signal", "")
-    if oi_signal == "cluster_buy":
-        score = min(100, score + 20)
-    elif oi_signal == "net_buying":
-        score = min(100, score + 10)
-    elif oi_signal == "net_selling":
-        score = max(0, score - 10)
 
     return round(min(100, max(0, score)), 1)
 
@@ -282,7 +271,6 @@ def get_master_analysis(ticker: str, sector: str | None = None) -> dict:
         "edgar_form4":      (_get_edgar_form4,      (ticker,)),
         "edgar_filings":    (_get_edgar_filings,    (ticker,)),
         "fred_macro":       (_get_fred_macro,        ()),
-        "open_insider":     (_get_open_insider,      (ticker,)),
         "reddit":           (_get_reddit_sentiment,  (ticker,)),
         "stocktwits":       (_get_stocktwits_sentiment, (ticker,)),
         "trends":           (_get_search_interest,   (ticker,)),
@@ -330,7 +318,7 @@ def get_master_analysis(ticker: str, sector: str | None = None) -> dict:
 
     # Compute scores
     fund_score    = _fundamental_score(results.get("edgar_financials", {}))
-    insider_score = _insider_score(results.get("edgar_form4", {}), results.get("open_insider", {}))
+    insider_score = _insider_score(results.get("edgar_form4", {}))
     retail_score  = _retail_sentiment_score(
         results.get("reddit", {}),
         results.get("stocktwits", {}),
@@ -371,9 +359,6 @@ def get_master_analysis(ticker: str, sector: str | None = None) -> dict:
         key_risks.append("Macro headwinds — rising rates or tightening environment")
     if retail_score >= 75 and (fund_score or 50) < 45:
         key_risks.append("Retail over-enthusiasm without fundamental support")
-    oi_signal = results.get("open_insider", {}).get("signal", "")
-    if oi_signal == "net_selling":
-        key_risks.append("Net insider selling on OpenInsider over last 90 days")
     if not key_risks:
         key_risks.append("No major risk signals detected from available data sources")
 
@@ -406,7 +391,6 @@ def get_master_analysis(ticker: str, sector: str | None = None) -> dict:
             "edgar_form4":      results.get("edgar_form4", {}),
             "edgar_filings":    results.get("edgar_filings", {}),
             "fred_macro":       results.get("fred_macro", {}),
-            "open_insider":     results.get("open_insider", {}),
             "reddit":           results.get("reddit", {}),
             "stocktwits":       results.get("stocktwits", {}),
             "trends":           results.get("trends", {}),

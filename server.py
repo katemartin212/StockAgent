@@ -97,6 +97,11 @@ class ValidateRequest(BaseModel):
     sector: Optional[str] = None
 
 
+class PrefetchRequest(BaseModel):
+    ticker: str
+    sources: Optional[List[str]] = None
+
+
 # ── Tool pipelines ────────────────────────────────────────────────────────────
 # Universal ticker-based tools (run for every sector, after sector_profile + biases)
 
@@ -254,7 +259,6 @@ Required JSON structure:
   },
   "insider_deep": {
     "edgar_weighted_signal": number or null,
-    "open_insider_signal": string,
     "cluster_buy": boolean,
     "net_flow_usd": number or null,
     "recent_transactions": [ { "name": string, "type": string, "value_usd": integer, "date": string } ]
@@ -366,7 +370,7 @@ MASTER_SIGNAL FIELD MAPPINGS — from master_signal data:
   If reddit.low_coverage is true, set social.reddit_posts = 0 and use the fallback_state in behavioral_signal reasoning.
 - master_signal.raw.stocktwits → social.stocktwits_score, stocktwits_watchers, top_stocktwits
 - master_signal.raw.trends → social.search_interest, near_search_peak
-- master_signal.raw.edgar_form4 + raw.open_insider → populate insider_deep{} block
+- master_signal.raw.edgar_form4 → populate insider_deep{} block
 - master_signal.behavioral_signal → use to inform behavioral_signal.state
 - master_signal.dominant_retail_narrative → use as additional evidence in retail_narrative claims
 - master_signal.key_risks → mention in verdict_rationale if relevant
@@ -461,18 +465,25 @@ def _stream_analysis(ticker: str):
       result          → final JSON analysis
       error           → something went wrong
     """
+    import time as _time
+    _t_stream_start = _time.time()
+    _perf: list[dict] = []   # performance_breakdown accumulator
+
     gathered = {}
     sector = None
 
     # ── Step 1: Sector profile (always first) ─────────────────────────────────
     yield sse({"type": "tool_start", "tool": "get_sector_profile"})
+    _t0 = _time.time()
     try:
         raw = get_sector_profile(ticker)
         data = json.loads(raw)
         gathered["get_sector_profile"] = data
         sector = data.get("sector")
+        _perf.append({"source": "get_sector_profile", "duration_ms": round((_time.time() - _t0) * 1000), "cache_hit": data.get("_cached", False)})
         yield sse({"type": "tool_done", "tool": "get_sector_profile"})
     except Exception as e:
+        _perf.append({"source": "get_sector_profile", "duration_ms": round((_time.time() - _t0) * 1000), "cache_hit": False, "error": str(e)})
         gathered["get_sector_profile"] = {"error": str(e)}
         yield sse({"type": "tool_done", "tool": "get_sector_profile", "error": str(e)})
 
@@ -491,56 +502,91 @@ def _stream_analysis(ticker: str):
 
     # ── Step 2: Sector behavioral biases (needs sector, not ticker) ───────────
     yield sse({"type": "tool_start", "tool": "get_sector_behavioral_biases"})
+    _t0 = _time.time()
     try:
         raw = get_sector_behavioral_biases(sector or "_default")
         gathered["get_sector_behavioral_biases"] = json.loads(raw)
+        _perf.append({"source": "get_sector_behavioral_biases", "duration_ms": round((_time.time() - _t0) * 1000), "cache_hit": False})
         yield sse({"type": "tool_done", "tool": "get_sector_behavioral_biases"})
     except Exception as e:
+        _perf.append({"source": "get_sector_behavioral_biases", "duration_ms": round((_time.time() - _t0) * 1000), "cache_hit": False, "error": str(e)})
         gathered["get_sector_behavioral_biases"] = {"error": str(e)}
         yield sse({"type": "tool_done", "tool": "get_sector_behavioral_biases", "error": str(e)})
 
-    # ── Step 3: Universal ticker tools ────────────────────────────────────────
-    for tool_name, tool_fn in UNIVERSAL_TICKER_PIPELINE:
+    # ── Steps 3+4: Universal + sector-specific tools — all parallel ──────────
+    # None of these tools depend on each other's output, so all can fire at once.
+    # We emit tool_start for all immediately, then tool_done as each completes.
+    all_tools = list(UNIVERSAL_TICKER_PIPELINE) + list(SECTOR_PIPELINE[sector_key])
+
+    for tool_name, _ in all_tools:
         yield sse({"type": "tool_start", "tool": tool_name})
+
+    import concurrent.futures as _cf2
+    _t0_tools = _time.time()
+
+    def _run_tool(tool_name, tool_fn):
+        t0 = _time.time()
         try:
             raw = tool_fn(ticker)
-            gathered[tool_name] = json.loads(raw)
-            yield sse({"type": "tool_done", "tool": tool_name})
+            result = json.loads(raw)
+            ms = round((_time.time() - t0) * 1000)
+            return tool_name, result, ms, None
         except Exception as e:
-            gathered[tool_name] = {"error": str(e)}
-            yield sse({"type": "tool_done", "tool": tool_name, "error": str(e)})
+            ms = round((_time.time() - t0) * 1000)
+            return tool_name, {"error": str(e)}, ms, str(e)
 
-    # ── Step 4: Sector-specific tools ─────────────────────────────────────────
-    for tool_name, tool_fn in SECTOR_PIPELINE[sector_key]:
-        yield sse({"type": "tool_start", "tool": tool_name})
-        try:
-            raw = tool_fn(ticker)
-            gathered[tool_name] = json.loads(raw)
-            yield sse({"type": "tool_done", "tool": tool_name})
-        except Exception as e:
-            gathered[tool_name] = {"error": str(e)}
-            yield sse({"type": "tool_done", "tool": tool_name, "error": str(e)})
+    with _cf2.ThreadPoolExecutor(max_workers=len(all_tools)) as _tool_pool:
+        _tool_futures = {
+            _tool_pool.submit(_run_tool, name, fn): name
+            for name, fn in all_tools
+        }
+        for _fut in _cf2.as_completed(_tool_futures, timeout=60):
+            tool_name, result, ms, err = _fut.result()
+            gathered[tool_name] = result
+            _perf.append({"source": tool_name, "duration_ms": ms, "cache_hit": result.get("_cached", False), **({"error": err} if err else {})})
+            yield sse({"type": "tool_done", "tool": tool_name, **({"error": err} if err else {})})
 
-    # ── Step 5: Parallel data enrichment + predictive analytics ──────────────
+    # ── Step 5: Master analysis → behavioral inputs → predictive analytics ──────
+    # master_analysis runs first (almost always cached, sub-second) so that
+    # divergence_score, macro_score, and insider_signal are available as
+    # behavioral inputs to the DCF scenario model in run_all_predictive.
     master_data = None
     predictive_data = None
-    import concurrent.futures as _cf
     yield sse({"type": "parallel_start", "sources": [
-        "SEC EDGAR", "FRED Macro", "OpenInsider", "Reddit", "StockTwits", "Google Trends"
+        "SEC EDGAR", "FRED Macro", "Reddit", "StockTwits", "Google Trends"
     ]})
+    _t0_parallel = _time.time()
     try:
-        with _cf.ThreadPoolExecutor(max_workers=2) as _pool:
-            _f_master = _pool.submit(get_master_analysis, ticker, sector)
-            _f_predict = _pool.submit(run_all_predictive, ticker, sector)
-            master_data    = _f_master.result(timeout=120)
-            predictive_data = _f_predict.result(timeout=120)
+        master_data = get_master_analysis(ticker, sector)
+
+        # Build behavioral_inputs from master_data signals for the scenario model.
+        # divergence_score from master_signal: HIGH = strong fundamentals / low retail
+        # attention (undervalued). We flip it so HIGH = overhyped, matching the
+        # spec convention where high divergence → narrative premium discount.
+        _insider_score = master_data.get("insider_score", 50)
+        _behavioral_inputs = {
+            "divergence_score": 100.0 - float(master_data.get("divergence_score", 50)),
+            "macro_score":       float(master_data.get("macro_score", 50)),
+            "insider_signal": (
+                "strongly_bullish" if _insider_score >= 75 else
+                "bullish"          if _insider_score >= 60 else
+                "strongly_bearish" if _insider_score <= 25 else
+                "bearish"          if _insider_score <= 40 else
+                "neutral"
+            ),
+        }
+        predictive_data = run_all_predictive(ticker, sector,
+                                             behavioral_inputs=_behavioral_inputs)
+        # Record individual source timings from master_signal's data_freshness_ms
+        for src_name, src_ms in (master_data.get("data_freshness_ms") or {}).items():
+            _perf.append({"source": f"master:{src_name}", "duration_ms": src_ms, "cache_hit": src_ms == 0})
+        _perf.append({"source": "run_all_predictive", "duration_ms": round((_time.time() - _t0_parallel) * 1000), "cache_hit": False})
         # Emit source_done for each source that returned data
         source_map = {
             "edgar_financials": "SEC EDGAR (Financials)",
             "edgar_form4":      "SEC EDGAR (Form 4)",
             "edgar_filings":    "SEC EDGAR (Filings)",
             "fred_macro":       "FRED Macro",
-            "open_insider":     "OpenInsider",
             "reddit":           "Reddit",
             "stocktwits":       "StockTwits",
             "trends":           "Google Trends",
@@ -572,13 +618,6 @@ def _stream_analysis(ticker: str):
                 k: v for k, v in raw.get("fred_macro", {}).items()
                 if k not in ("errors", "data_source", "_elapsed_ms", "as_of")
             },
-            "insider_open": {
-                k: raw.get("open_insider", {}).get(k)
-                for k in ("signal", "signal_note", "cluster_buy_signal",
-                           "net_flow_usd", "net_value_purchased_usd",
-                           "net_value_sold_usd", "transactions_found")
-            },
-            "insider_open_top3": raw.get("open_insider", {}).get("transactions", [])[:3],
             "reddit": {
                 k: raw.get("reddit", {}).get(k)
                 for k in ("overall_sentiment", "sentiment_score", "weighted_score",
@@ -604,6 +643,7 @@ def _stream_analysis(ticker: str):
         yield sse({"type": "parallel_done", "error": str(e)})
 
     # ── Step 6: Claude synthesizes all gathered data ──────────────────────────
+    _t0_synthesis = _time.time()
     yield sse({"type": "synthesizing"})
 
     user_msg = (
@@ -651,6 +691,9 @@ def _stream_analysis(ticker: str):
 
         if not analysis.get("sector_toolkit"):
             analysis["sector_toolkit"] = toolkit_label
+        _perf.append({"source": "claude_synthesis", "duration_ms": round((_time.time() - _t0_synthesis) * 1000), "cache_hit": False})
+        analysis["performance_breakdown"] = _perf
+        analysis["total_analysis_ms"] = round((_time.time() - _t_stream_start) * 1000)
         yield sse({"type": "result", "data": analysis})
 
     except json.JSONDecodeError as e:
@@ -660,6 +703,59 @@ def _stream_analysis(ticker: str):
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
+
+@app.get("/cache/stats")
+def get_cache_stats():
+    from data_sources._cache import cache_stats
+    stats = cache_stats()
+    stats["display"] = f"Cache saved ~{stats['saved_s']}s this session ({stats['hit_rate_pct']}% hit rate)"
+    return JSONResponse(content=stats)
+
+
+def _prefetch_background(ticker: str, sources: list[str]):
+    """Fire slow data fetches in background threads. Returns immediately."""
+    import importlib
+    _source_map = {
+        "edgar":   [("data_sources.sec_edgar", "get_edgar_financials"),
+                    ("data_sources.sec_edgar", "get_edgar_form4"),
+                    ("data_sources.sec_edgar", "get_edgar_filings")],
+        "fred":    [("data_sources.fred_macro", "get_fred_macro")],
+        "profile": [("tools_universal", "get_sector_profile"),
+                    ("tools_universal", "get_company_info")],
+        "reddit":  [("data_sources.reddit_sentiment", "get_reddit_sentiment")],
+        "trends":  [("data_sources.trends_signal", "get_search_interest")],
+    }
+    tasks = []
+    for src in (sources or ["edgar", "fred", "profile"]):
+        tasks.extend(_source_map.get(src, []))
+
+    def _call(mod_path, fn_name):
+        try:
+            mod = importlib.import_module(mod_path)
+            fn = getattr(mod, fn_name)
+            fn(ticker) if fn_name != "get_fred_macro" else fn()
+        except Exception:
+            pass
+
+    import concurrent.futures as _cf
+    with _cf.ThreadPoolExecutor(max_workers=len(tasks)) as pool:
+        for mod_path, fn_name in tasks:
+            pool.submit(_call, mod_path, fn_name)
+
+
+@app.post("/prefetch")
+def prefetch(req: PrefetchRequest):
+    """Fire slow fetches in background. Returns 202 immediately — never blocks."""
+    ticker = req.ticker.upper().strip()
+    import threading
+    t = threading.Thread(
+        target=_prefetch_background,
+        args=(ticker, req.sources),
+        daemon=True,
+    )
+    t.start()
+    return JSONResponse(status_code=202, content={"status": "prefetch_started", "ticker": ticker})
+
 
 @app.post("/analyze")
 def analyze(req: AnalyzeRequest):

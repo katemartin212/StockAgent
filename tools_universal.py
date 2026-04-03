@@ -44,6 +44,44 @@ if not api_key:
 client = anthropic.Anthropic(api_key=api_key)
 _today = datetime.now().strftime("%B %d, %Y")
 
+# ── yfinance field allowlist ────────────────────────────────────────────────────
+# yfinance .info returns 100+ fields; we filter to only what the pipeline uses.
+# This avoids sending massive payloads through the tool chain.
+
+_YF_FIELDS = {
+    "longName", "shortName", "sector", "industry",
+    "currentPrice", "regularMarketPrice", "previousClose",
+    "regularMarketChangePercent", "regularMarketChange",
+    "marketCap", "enterpriseValue",
+    "trailingPE", "forwardPE", "priceToBook",
+    "enterpriseToRevenue", "enterpriseToEbitda",
+    "grossMargins", "operatingMargins", "profitMargins",
+    "revenueGrowth", "earningsGrowth",
+    "totalRevenue", "grossProfits", "freeCashflow",
+    "operatingCashflow", "ebitda",
+    "shortPercentOfFloat", "shortRatio",
+    "targetMeanPrice", "targetHighPrice", "targetLowPrice",
+    "recommendationKey", "numberOfAnalystOpinions",
+    "beta", "fiftyTwoWeekHigh", "fiftyTwoWeekLow",
+    "averageVolume", "averageVolume10days", "volume",
+    "sharesOutstanding", "floatShares",
+    "dividendYield", "exDividendDate",
+    "longBusinessSummary", "fullTimeEmployees",
+    "city", "state", "country",
+    "website", "phone",
+    "earningsDate", "nextFiscalYearEnd", "mostRecentQuarter",
+    "founded", "ipoDate",
+    "totalDebt", "totalCash", "debtToEquity",
+    "returnOnEquity", "returnOnAssets",
+    "revenuePerShare", "bookValue",
+    "heldPercentInstitutions", "heldPercentInsiders",
+}
+
+
+def _filter_info(raw_info: dict) -> dict:
+    """Return only the fields in the allowlist to reduce payload size."""
+    return {k: v for k, v in raw_info.items() if k in _YF_FIELDS}
+
 # ── Sector behavioral bias lookup ──────────────────────────────────────────────
 # Top 3 retail misconceptions per sector. Used by get_sector_behavioral_biases.
 
@@ -201,7 +239,7 @@ sector_profile_tool = {
 def get_sector_profile(ticker: str) -> str:
     try:
         ticker = ticker.upper().strip()
-        info = yf.Ticker(ticker).info
+        info = _filter_info(yf.Ticker(ticker).info)
         desc = info.get("longBusinessSummary") or ""
         return json.dumps({
             "ticker": ticker,
@@ -236,7 +274,7 @@ stock_price_tool = {
 
 def get_stock_price(ticker: str) -> str:
     try:
-        info = yf.Ticker(ticker.upper().strip()).info
+        info = _filter_info(yf.Ticker(ticker.upper().strip()).info)
         price = info.get("currentPrice") or info.get("regularMarketPrice")
         if not price:
             return json.dumps({"error": f"No price data for '{ticker}'."})
@@ -275,7 +313,7 @@ company_info_tool = {
 
 def get_company_info(ticker: str) -> str:
     try:
-        info = yf.Ticker(ticker.upper().strip()).info
+        info = _filter_info(yf.Ticker(ticker.upper().strip()).info)
         officers = info.get("companyOfficers") or []
         ceo = next(
             (o.get("name") for o in officers if "CEO" in (o.get("title") or "").upper()),
@@ -319,7 +357,7 @@ def get_financial_data(ticker: str) -> str:
     try:
         ticker = ticker.upper().strip()
         stock = yf.Ticker(ticker)
-        info = stock.info
+        info = _filter_info(stock.info)
         price = info.get("currentPrice") or info.get("regularMarketPrice")
         if not info or price is None:
             return json.dumps({"error": f"No data for '{ticker}'."})
@@ -406,7 +444,7 @@ def get_macro_sensitivity(ticker: str) -> str:
     try:
         ticker = ticker.upper().strip()
         stock = yf.Ticker(ticker)
-        info = stock.info
+        info = _filter_info(stock.info)
 
         beta = info.get("beta")
         de_ratio = info.get("debtToEquity")           # percentage form in yfinance
@@ -668,7 +706,7 @@ def get_dcf_implied_growth(ticker: str) -> str:
     try:
         ticker = ticker.upper().strip()
         stock  = yf.Ticker(ticker)
-        info   = stock.info
+        info   = _filter_info(stock.info)
 
         price      = info.get("currentPrice") or info.get("regularMarketPrice")
         market_cap = info.get("marketCap")
@@ -810,7 +848,7 @@ def get_dilution_rate(ticker: str) -> str:
     try:
         ticker = ticker.upper().strip()
         stock  = yf.Ticker(ticker)
-        info   = stock.info
+        info   = _filter_info(stock.info)
         cf     = stock.cashflow
         fin    = stock.financials
         result = {"ticker": ticker, "name": info.get("longName")}

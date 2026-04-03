@@ -21,6 +21,7 @@ import re
 import time
 import json
 import requests
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
 from data_sources._cache import cache_get, cache_set, cache_key, log_fetch, logger
@@ -250,8 +251,7 @@ def _fetch_subreddit(sub: str, query: str, headers: dict) -> list[dict]:
     url = f"https://www.reddit.com/r/{sub}/search.json?q={query}&sort=relevance&t=month&limit=25&restrict_sr=1"
     for attempt in range(2):
         try:
-            time.sleep(0.5)
-            r = requests.get(url, headers=headers, timeout=12)
+            r = requests.get(url, headers=headers, timeout=10)
             if r.status_code == 429:
                 logger.warning(f"Reddit 429 on r/{sub} — backing off 60s")
                 time.sleep(60)
@@ -361,26 +361,29 @@ def get_reddit_sentiment(ticker: str, sector: str | None = None, company_name: s
     tier1_subs = list(TIER1)
     tier2_subs = TIER2_BY_SECTOR.get(sector or "", [])
 
-    # ── Fetch from all subreddits ────────────────────────────────────────────
+    # ── Fetch from all subreddits in parallel ────────────────────────────────
     # Use broader query to capture both $TICKER and plain TICKER
     query = f"{ticker} OR ${ticker}"
 
     all_raw: list[dict] = []
     fetched_from: dict[str, int] = {}
 
-    for sub in tier1_subs:
+    def _fetch_with_tier(sub: str, tier: int) -> tuple[str, int, list[dict]]:
         posts = _fetch_subreddit(sub, query, headers)
-        fetched_from[sub] = len(posts)
         for p in posts:
-            p["_tier"] = 1
-        all_raw.extend(posts)
+            p["_tier"] = tier
+        return sub, tier, posts
 
-    for sub in tier2_subs:
-        posts = _fetch_subreddit(sub, query, headers)
-        fetched_from[sub] = len(posts)
-        for p in posts:
-            p["_tier"] = 2
-        all_raw.extend(posts)
+    all_subs = [(s, 1) for s in tier1_subs] + [(s, 2) for s in tier2_subs]
+    with ThreadPoolExecutor(max_workers=len(all_subs)) as _pool:
+        _futs = {_pool.submit(_fetch_with_tier, sub, tier): sub for sub, tier in all_subs}
+        for _fut in as_completed(_futs, timeout=12):
+            try:
+                sub, tier, posts = _fut.result()
+                fetched_from[sub] = len(posts)
+                all_raw.extend(posts)
+            except Exception as e:
+                logger.warning(f"Reddit subreddit fetch failed: {e}")
 
     total_fetched = len(all_raw)
 

@@ -10,9 +10,20 @@ Functions:
 """
 
 import time
+import random
+import threading
 from datetime import datetime, timedelta
+from collections import deque
 
 from data_sources._cache import cache_get, cache_set, cache_key, log_fetch, logger
+
+# ── Circuit breaker ───────────────────────────────────────────────────────────
+# If 3 errors in 10 minutes, skip Trends entirely to avoid blocking analysis.
+
+_CB_WINDOW  = 600   # 10 minutes in seconds
+_CB_MAX_ERR = 3     # error threshold before opening circuit
+_cb_errors: deque = deque()   # timestamps of recent errors
+_cb_lock = threading.Lock()
 
 try:
     from pytrends.request import TrendReq
@@ -28,6 +39,38 @@ def _not_installed() -> dict:
     }
 
 
+def _cb_is_open() -> bool:
+    """Return True if circuit breaker is open (too many recent errors)."""
+    now = time.time()
+    with _cb_lock:
+        # Evict errors older than the window
+        while _cb_errors and (now - _cb_errors[0]) > _CB_WINDOW:
+            _cb_errors.popleft()
+        return len(_cb_errors) >= _CB_MAX_ERR
+
+
+def _cb_record_error():
+    with _cb_lock:
+        _cb_errors.append(time.time())
+
+
+def _build_payload_with_backoff(pytrends, keywords, timeframe, geo, max_retries=3):
+    """Call build_payload with exponential backoff on 400/429 errors."""
+    for attempt in range(max_retries):
+        try:
+            pytrends.build_payload(keywords, cat=0, timeframe=timeframe, geo=geo)
+            return  # success
+        except Exception as e:
+            err_str = str(e)
+            if "400" in err_str or "429" in err_str:
+                if attempt < max_retries - 1:
+                    wait = (2 ** attempt) + random.uniform(0, 1)
+                    logger.warning(f"Google Trends rate limit (attempt {attempt+1}), retrying in {wait:.1f}s")
+                    time.sleep(wait)
+                    continue
+            raise  # non-rate-limit error or final attempt
+
+
 def get_search_interest(ticker: str, company_name: str | None = None) -> dict:
     """
     Fetch 12-month Google Trends interest for a ticker (and optionally the
@@ -36,6 +79,17 @@ def get_search_interest(ticker: str, company_name: str | None = None) -> dict:
     """
     if not _PYTRENDS_AVAILABLE:
         return _not_installed()
+
+    # Circuit breaker: skip if too many recent errors
+    if _cb_is_open():
+        out = {
+            "error":       "rate_limited",
+            "retry_after": _CB_WINDOW,
+            "ticker":      ticker.upper(),
+            "data_source": "Google Trends (circuit breaker open — too many recent errors)",
+        }
+        logger.warning(f"Google Trends circuit breaker open, skipping {ticker}")
+        return out
 
     ck = cache_key("trends_interest", ticker)
     hit = cache_get(ck)
@@ -53,8 +107,8 @@ def get_search_interest(ticker: str, company_name: str | None = None) -> dict:
             keywords.append(company_name[:60])   # pytrends limit
 
         pytrends = TrendReq(hl="en-US", tz=0, timeout=(10, 25), retries=0)
-        pytrends.build_payload(keywords[:1], timeframe="today 12-m", geo="")
-        time.sleep(1.0)   # Google rate-limiting buffer
+        _build_payload_with_backoff(pytrends, keywords[:1], timeframe="today 12-m", geo="")
+        time.sleep(0.5)   # short buffer after successful payload
 
         interest_df = pytrends.interest_over_time()
 
@@ -126,6 +180,7 @@ def get_search_interest(ticker: str, company_name: str | None = None) -> dict:
         return out
 
     except Exception as e:
+        _cb_record_error()
         out = {"error": str(e), "ticker": ticker, "data_source": "Google Trends"}
         logger.error(f"get_search_interest({ticker}): {e}")
         return out
