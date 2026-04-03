@@ -459,3 +459,7 @@ def get_edgar_filings(ticker: str, form_type: str = "8-K", limit: int = 5) -> di
         out = {"error": str(e), "ticker": ticker, "data_source": "SEC EDGAR Submissions"}
         logger.error(f"get_edgar_filings({ticker}): {e}")
         return out
+
+
+# Alias: get_edgar_form4 is the Form 4 insider transaction source
+get_insider_activity = get_edgar_form4

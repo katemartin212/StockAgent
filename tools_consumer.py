@@ -11,28 +11,22 @@ Consumer Cyclical / Consumer Defensive sector tools:
 import json
 import yfinance as yf
 
+from tools_base import _tool_schema
+
 # ── Same-Store Sales ───────────────────────────────────────────────────────────
 # True SSS (comps) are not reported via free APIs — they're disclosed quarterly
 # in earnings releases and SEC filings. We proxy using revenue-per-employee
 # as a throughput proxy, plus YoY quarterly revenue trends to strip out some
 # of the new-store contribution noise.
 
-sss_tool = {
-    "name": "get_same_store_sales",
-    "description": (
-        "Estimates same-store / comparable sales growth using revenue-per-employee as a "
-        "throughput proxy, quarterly revenue YoY growth trends, and gross margin trajectory. "
-        "True comparable sales data requires earnings release parsing. Returns a proxy estimate "
-        "with trend direction and what it implies for organic demand."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "ticker": {"type": "string", "description": "Ticker symbol, e.g. 'HD'"}
-        },
-        "required": ["ticker"]
-    }
-}
+sss_tool = _tool_schema(
+    "get_same_store_sales",
+    "Estimates same-store / comparable sales growth using revenue-per-employee as a "
+    "throughput proxy, quarterly revenue YoY growth trends, and gross margin trajectory. "
+    "True comparable sales data requires earnings release parsing. Returns a proxy estimate "
+    "with trend direction and what it implies for organic demand.",
+    example="HD",
+)
 
 def get_same_store_sales(ticker: str) -> str:
     try:
@@ -128,22 +122,14 @@ def get_same_store_sales(ticker: str) -> str:
 # This is one of the clearest leading indicators of demand weakness in retail.
 # Turns decline 1–2 quarters before markdowns show up in reported gross margins.
 
-inventory_turns_tool = {
-    "name": "get_inventory_turns",
-    "description": (
-        "Inventory Turns = COGS / Average Inventory. Declining turns signal demand "
-        "weakness before it appears in revenue or gross margins (typically 1–2 quarters lead). "
-        "Returns trailing turns, trend over 3 years, days inventory outstanding, and "
-        "a demand signal. For retailers/consumer companies this is a critical leading indicator."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "ticker": {"type": "string", "description": "Ticker symbol, e.g. 'WMT'"}
-        },
-        "required": ["ticker"]
-    }
-}
+inventory_turns_tool = _tool_schema(
+    "get_inventory_turns",
+    "Inventory Turns = COGS / Average Inventory. Declining turns signal demand "
+    "weakness before it appears in revenue or gross margins (typically 1–2 quarters lead). "
+    "Returns trailing turns, trend over 3 years, days inventory outstanding, and "
+    "a demand signal. For retailers/consumer companies this is a critical leading indicator.",
+    example="WMT",
+)
 
 def get_inventory_turns(ticker: str) -> str:
     try:
@@ -273,22 +259,14 @@ def get_inventory_turns(ticker: str) -> str:
 # We return overall gross margin trajectory and flag the limitation clearly,
 # plus any segment revenue data that yfinance exposes.
 
-gm_channel_tool = {
-    "name": "get_gross_margin_by_channel",
-    "description": (
-        "Returns overall gross margin trend over 3 years and notes any segment-level "
-        "data available via yfinance. True channel-level margin breakdown (digital vs "
-        "physical, online vs in-store) requires 10-K segment disclosures. "
-        "Returns a margin trajectory assessment and notes the data limitation."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "ticker": {"type": "string", "description": "Ticker symbol, e.g. 'TGT'"}
-        },
-        "required": ["ticker"]
-    }
-}
+gm_channel_tool = _tool_schema(
+    "get_gross_margin_by_channel",
+    "Returns overall gross margin trend over 3 years and notes any segment-level "
+    "data available via yfinance. True channel-level margin breakdown (digital vs "
+    "physical, online vs in-store) requires 10-K segment disclosures. "
+    "Returns a margin trajectory assessment and notes the data limitation.",
+    example="TGT",
+)
 
 def get_gross_margin_by_channel(ticker: str) -> str:
     try:

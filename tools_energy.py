@@ -10,28 +10,22 @@ Energy sector tools:
 import json
 import yfinance as yf
 
+from tools_base import _tool_schema
+
 # ── Break-Even Price ───────────────────────────────────────────────────────────
 # True break-even requires production volumes (barrels/day or Mcf) which aren't
 # in yfinance. We proxy using total operating costs per dollar of revenue, then
 # relate that to recent commodity prices to estimate a break-even range.
 
-break_even_tool = {
-    "name": "get_break_even_price",
-    "description": (
-        "Estimates the oil/gas price at which the company covers operating costs and capex. "
-        "Uses operating cost as % of revenue, revenue per period, and capex intensity to "
-        "derive an implied break-even commodity price range. "
-        "Requires knowing recent avg realized price (estimated from revenue trends). "
-        "Flags if break-even appears above $60/bbl (structural risk in a downcycle)."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "ticker": {"type": "string", "description": "Ticker symbol, e.g. 'XOM'"}
-        },
-        "required": ["ticker"]
-    }
-}
+break_even_tool = _tool_schema(
+    "get_break_even_price",
+    "Estimates the oil/gas price at which the company covers operating costs and capex. "
+    "Uses operating cost as % of revenue, revenue per period, and capex intensity to "
+    "derive an implied break-even commodity price range. "
+    "Requires knowing recent avg realized price (estimated from revenue trends). "
+    "Flags if break-even appears above $60/bbl (structural risk in a downcycle).",
+    example="XOM",
+)
 
 def get_break_even_price(ticker: str) -> str:
     try:
@@ -149,22 +143,14 @@ def get_break_even_price(ticker: str) -> str:
 # We proxy using depletion/depreciation as % of PP&E — a company depleting faster
 # than it invests in new capacity has reserve replacement < 100%.
 
-reserve_replacement_tool = {
-    "name": "get_reserve_replacement",
-    "description": (
-        "Estimates reserve replacement using Depletion & Depreciation / PP&E as a proxy. "
-        "When D&D exceeds new capex additions to PP&E, the company is consuming reserves "
-        "faster than it replaces them (ratio < 100%). Flags if asset base is shrinking. "
-        "True reserve replacement requires SEC 10-K Supplemental oil & gas disclosures."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "ticker": {"type": "string", "description": "Ticker symbol, e.g. 'CVX'"}
-        },
-        "required": ["ticker"]
-    }
-}
+reserve_replacement_tool = _tool_schema(
+    "get_reserve_replacement",
+    "Estimates reserve replacement using Depletion & Depreciation / PP&E as a proxy. "
+    "When D&D exceeds new capex additions to PP&E, the company is consuming reserves "
+    "faster than it replaces them (ratio < 100%). Flags if asset base is shrinking. "
+    "True reserve replacement requires SEC 10-K Supplemental oil & gas disclosures.",
+    example="CVX",
+)
 
 def get_reserve_replacement(ticker: str) -> str:
     try:

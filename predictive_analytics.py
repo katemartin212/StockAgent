@@ -22,6 +22,8 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeout
 
 from data_sources._cache import cache_get, cache_set, cache_key
+from predictive._timeseries import align_weekly, decay_weights
+from predictive._ridge import weighted_ridge
 
 RNG = np.random.default_rng(42)
 
@@ -57,86 +59,8 @@ FACTOR_LABELS = {
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
-def _fetch_weekly(symbol: str, period: str = "2y") -> pd.Series:
-    """Fetch weekly adjusted close prices for one symbol. Silent on error."""
-    try:
-        import yfinance as yf
-        hist = yf.Ticker(symbol).history(period=period, interval="1wk", auto_adjust=True)
-        if hist.empty:
-            return pd.Series(dtype=float, name=symbol)
-        return hist["Close"].rename(symbol)
-    except Exception:
-        return pd.Series(dtype=float, name=symbol)
-
-
-def _ols(X: np.ndarray, y: np.ndarray, weights: np.ndarray = None):
-    """
-    Weighted Ridge regression with cross-validated L2 penalty and analytic SEs.
-    X must be pre-normalized. weights are per-observation (unnormalized); None = uniform.
-    Ridge alpha is selected via GCV (sklearn RidgeCV). SEs use the sandwich
-    covariance  σ² · (X'WX + αI)⁻¹ · X'WX · (X'WX + αI)⁻¹  which reduces to
-    OLS when α → 0 and weights are uniform.
-
-    Returns (coefs, p_values, r_squared, ci_lo, ci_hi) or None.
-    ci_lo / ci_hi are 95% CI lower/upper bounds on each slope coefficient.
-    """
-    from scipy import stats as sp
-    from sklearn.linear_model import RidgeCV as _RidgeCV
-
-    n, p = X.shape
-    df = n - p - 1
-    if df <= 0:
-        return None
-
-    if weights is None:
-        weights = np.ones(n)
-    # Normalize so weights sum to n (keeps RSS scale comparable to unweighted OLS)
-    w = weights * (n / weights.sum())
-
-    # Cross-validate Ridge penalty via GCV
-    alphas = np.array([0.01, 0.1, 1.0, 10.0, 100.0])
-    try:
-        rcv = _RidgeCV(alphas=alphas, fit_intercept=True)
-        rcv.fit(X, y, sample_weight=w)
-        alpha = float(rcv.alpha_)
-    except Exception:
-        alpha = 1.0  # safe fallback
-
-    # Augmented design matrix [1 | X]; penalty block excludes intercept
-    Xc = np.column_stack([np.ones(n), X])
-    P  = np.zeros((p + 1, p + 1))
-    P[1:, 1:] = np.eye(p) * alpha
-
-    try:
-        XtWX = Xc.T @ (w[:, None] * Xc)   # avoids forming diag(w)
-        A     = XtWX + P
-        A_inv = np.linalg.inv(A)
-        beta  = A_inv @ (Xc.T @ (w * y))
-
-        resid  = y - Xc @ beta
-        rss    = float((w * resid ** 2).sum())
-        sigma2 = rss / df
-
-        # Sandwich covariance: σ² · A⁻¹ · X'WX · A⁻¹
-        var_beta = sigma2 * (A_inv @ XtWX @ A_inv)
-        se = np.sqrt(np.maximum(np.diag(var_beta), 0.0))
-
-        t_stat = beta / np.where(se > 0, se, 1e-10)
-        p_vals = 2 * (1 - sp.t.cdf(np.abs(t_stat), df=df))
-
-        # Weighted R²
-        y_wbar = float((w * y).sum()) / n
-        ss_tot = float((w * (y - y_wbar) ** 2).sum())
-        r2     = 1.0 - rss / ss_tot if ss_tot > 0 else 0.0
-
-        t_crit = sp.t.ppf(0.975, df=df)
-        ci_lo  = beta - t_crit * se
-        ci_hi  = beta + t_crit * se
-
-        return beta[1:], p_vals[1:], float(r2), ci_lo[1:], ci_hi[1:]
-
-    except (np.linalg.LinAlgError, ValueError):
-        return None
+_fetch_weekly = align_weekly   # backward-compat alias used within this module
+_ols = weighted_ridge          # backward-compat alias used within this module
 
 
 def _pct_rank(series: pd.Series, value: float) -> float:
@@ -224,9 +148,9 @@ def get_factor_attribution(ticker: str, sector: str = None) -> dict:
 
         # Exponential decay: λ = 0.98/week, most recent observation weighted highest
         n_obs = len(combined)
-        decay_weights = 0.98 ** np.arange(n_obs - 1, -1, -1)
+        obs_weights = decay_weights(n_obs)
 
-        result = _ols(X_norm, y, weights=decay_weights)
+        result = _ols(X_norm, y, weights=obs_weights)
         if result is None:
             return {"error": "OLS regression failed — singular matrix"}
         coefs, p_vals, r2, ci_lo, ci_hi = result

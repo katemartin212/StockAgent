@@ -25,6 +25,8 @@ import requests
 import yfinance as yf
 import anthropic
 
+from tools_base import _tool_schema
+
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -220,21 +222,13 @@ def calculator(expression: str) -> str:
 
 # ── Sector Profile — always the first tool; drives routing ────────────────────
 
-sector_profile_tool = {
-    "name": "get_sector_profile",
-    "description": (
-        "ALWAYS call this first for any analysis. Returns the company's sector, "
-        "industry, market cap, and a brief business description from yfinance. "
-        "The sector field determines which analytical toolkit will be applied."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "ticker": {"type": "string", "description": "Ticker symbol, e.g. 'JNJ'"}
-        },
-        "required": ["ticker"]
-    }
-}
+sector_profile_tool = _tool_schema(
+    "get_sector_profile",
+    "ALWAYS call this first for any analysis. Returns the company's sector, "
+    "industry, market cap, and a brief business description from yfinance. "
+    "The sector field determines which analytical toolkit will be applied.",
+    example="JNJ",
+)
 
 def get_sector_profile(ticker: str) -> str:
     try:
@@ -257,20 +251,11 @@ def get_sector_profile(ticker: str) -> str:
 
 # ── Stock Price ────────────────────────────────────────────────────────────────
 
-stock_price_tool = {
-    "name": "get_stock_price",
-    "description": (
-        "Live stock price, daily change %, 52-week range, volume, and market cap. "
-        "Use get_financial_data for valuation metrics."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "ticker": {"type": "string", "description": "Ticker symbol, e.g. 'AAPL'"}
-        },
-        "required": ["ticker"]
-    }
-}
+stock_price_tool = _tool_schema(
+    "get_stock_price",
+    "Live stock price, daily change %, 52-week range, volume, and market cap. "
+    "Use get_financial_data for valuation metrics.",
+)
 
 def get_stock_price(ticker: str) -> str:
     try:
@@ -296,20 +281,12 @@ def get_stock_price(ticker: str) -> str:
 
 # ── Company Info ───────────────────────────────────────────────────────────────
 
-company_info_tool = {
-    "name": "get_company_info",
-    "description": (
-        "Company profile: sector, industry, employee count, CEO, headquarters, "
-        "and a brief business description. Use ticker symbol as input."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "ticker": {"type": "string", "description": "Ticker symbol, e.g. 'MSFT'"}
-        },
-        "required": ["ticker"]
-    }
-}
+company_info_tool = _tool_schema(
+    "get_company_info",
+    "Company profile: sector, industry, employee count, CEO, headquarters, "
+    "and a brief business description. Use ticker symbol as input.",
+    example="MSFT",
+)
 
 def get_company_info(ticker: str) -> str:
     try:
@@ -337,21 +314,13 @@ def get_company_info(ticker: str) -> str:
 
 # ── Financial Data — core metrics for all sectors ─────────────────────────────
 
-financial_data_tool = {
-    "name": "get_financial_data",
-    "description": (
-        "Core financial metrics applicable to all sectors: revenue growth, gross margin, "
-        "FCF margin, Rule of 40, EV/Revenue, P/E, forward P/E, and analyst targets. "
-        "For sector-specific profitability metrics use the sector-specific tools."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "ticker": {"type": "string", "description": "Ticker symbol, e.g. 'NVDA'"}
-        },
-        "required": ["ticker"]
-    }
-}
+financial_data_tool = _tool_schema(
+    "get_financial_data",
+    "Core financial metrics applicable to all sectors: revenue growth, gross margin, "
+    "FCF margin, Rule of 40, EV/Revenue, P/E, forward P/E, and analyst targets. "
+    "For sector-specific profitability metrics use the sector-specific tools.",
+    example="NVDA",
+)
 
 def get_financial_data(ticker: str) -> str:
     try:
@@ -417,23 +386,15 @@ def get_financial_data(ticker: str) -> str:
 # Uses beta (market proxy), D/E ratio (rate sensitivity), and international revenue
 # proxies to give portfolio managers a quick macro overlay for any ticker.
 
-macro_sensitivity_tool = {
-    "name": "get_macro_sensitivity",
-    "description": (
-        "Scores a stock's sensitivity to three macro factors: interest rates (via D/E ratio "
-        "and dividend yield), USD strength (via international revenue proxy from business "
-        "description and geographic segments), and GDP/economic cycle (via beta and "
-        "sector cyclicality). Returns sensitivity ratings and plain-English explanations. "
-        "Run this for every ticker — essential context for cross-asset portfolio decisions."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "ticker": {"type": "string", "description": "Ticker symbol, e.g. 'NVDA'"}
-        },
-        "required": ["ticker"]
-    }
-}
+macro_sensitivity_tool = _tool_schema(
+    "get_macro_sensitivity",
+    "Scores a stock's sensitivity to three macro factors: interest rates (via D/E ratio "
+    "and dividend yield), USD strength (via international revenue proxy from business "
+    "description and geographic segments), and GDP/economic cycle (via beta and "
+    "sector cyclicality). Returns sensitivity ratings and plain-English explanations. "
+    "Run this for every ticker — essential context for cross-asset portfolio decisions.",
+    example="NVDA",
+)
 
 _INTL_KEYWORDS = [
     "international", "global", "worldwide", "europe", "asia", "china", "japan",
@@ -554,23 +515,15 @@ def get_macro_sensitivity(ticker: str) -> str:
 # Uses SEC EDGAR's free full-text search and submissions API.
 # No scraping, no API key, no rate limits beyond respectful user-agent header.
 
-insider_activity_tool = {
-    "name": "get_insider_activity",
-    "description": (
-        "Fetch recent insider Form 4 filings from SEC EDGAR's free API "
-        "(data.sec.gov/submissions). Returns the count of Form 4 filings "
-        "in the last 90 days, filer names, and filing dates. "
-        "Elevated filing activity during price weakness is a bullish signal. "
-        "Works for any publicly listed US company."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "ticker": {"type": "string", "description": "Ticker symbol, e.g. 'META'"}
-        },
-        "required": ["ticker"]
-    }
-}
+insider_activity_tool = _tool_schema(
+    "get_insider_activity",
+    "Fetch recent insider Form 4 filings from SEC EDGAR's free API "
+    "(data.sec.gov/submissions). Returns the count of Form 4 filings "
+    "in the last 90 days, filer names, and filing dates. "
+    "Elevated filing activity during price weakness is a bullish signal. "
+    "Works for any publicly listed US company.",
+    example="META",
+)
 
 def get_insider_activity(ticker: str) -> str:
     ticker = ticker.upper().strip()
@@ -685,22 +638,14 @@ def get_sector_behavioral_biases(sector: str) -> str:
 # Reverse-engineers the revenue CAGR embedded in the current stock price.
 # Assumptions: 10% discount rate, 20× terminal FCF multiple, constant FCF margin.
 
-dcf_implied_tool = {
-    "name": "get_dcf_implied_growth",
-    "description": (
-        "Reverse-engineer the 10-year revenue CAGR the current stock price is implying. "
-        "Uses 10% discount rate, 20× terminal FCF multiple, constant FCF margin. "
-        "Returns implied CAGR, trailing 3-year actual CAGR, the gap, achievability verdict, "
-        "and a plain-English summary. Run this for every ticker with positive FCF."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "ticker": {"type": "string", "description": "Ticker symbol, e.g. 'NVDA'"}
-        },
-        "required": ["ticker"]
-    }
-}
+dcf_implied_tool = _tool_schema(
+    "get_dcf_implied_growth",
+    "Reverse-engineer the 10-year revenue CAGR the current stock price is implying. "
+    "Uses 10% discount rate, 20× terminal FCF multiple, constant FCF margin. "
+    "Returns implied CAGR, trailing 3-year actual CAGR, the gap, achievability verdict, "
+    "and a plain-English summary. Run this for every ticker with positive FCF.",
+    example="NVDA",
+)
 
 def get_dcf_implied_growth(ticker: str) -> str:
     try:
@@ -828,21 +773,13 @@ def get_dcf_implied_growth(ticker: str) -> str:
 # This tool makes it explicit: SBC/revenue, SBC/GP, SBC-adjusted FCF margin,
 # and YoY share count growth.
 
-dilution_tool = {
-    "name": "get_dilution_rate",
-    "description": (
-        "SBC as % of revenue/gross profit, SBC-adjusted FCF margin, and YoY share count growth. "
-        "Benchmarks SBC level (low/moderate/high/very high) and flags >3% share dilution. "
-        "Run this for every ticker — GAAP FCF overstates true cash when SBC is material."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "ticker": {"type": "string", "description": "Ticker symbol, e.g. 'MSFT'"}
-        },
-        "required": ["ticker"]
-    }
-}
+dilution_tool = _tool_schema(
+    "get_dilution_rate",
+    "SBC as % of revenue/gross profit, SBC-adjusted FCF margin, and YoY share count growth. "
+    "Benchmarks SBC level (low/moderate/high/very high) and flags >3% share dilution. "
+    "Run this for every ticker — GAAP FCF overstates true cash when SBC is material.",
+    example="MSFT",
+)
 
 def get_dilution_rate(ticker: str) -> str:
     try:

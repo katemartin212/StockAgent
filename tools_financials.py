@@ -11,27 +11,21 @@ Financial Services sector tools (banks, insurance, fintech):
 import json
 import yfinance as yf
 
+from tools_base import _tool_schema
+
 # ── Net Interest Margin ────────────────────────────────────────────────────────
 # NIM = Net Interest Income / Average Earning Assets
 # yfinance exposes Net Interest Income for banks from the income statement.
 # Total Assets from the balance sheet serves as a proxy for earning assets.
 
-nim_tool = {
-    "name": "get_net_interest_margin",
-    "description": (
-        "Net Interest Margin (NIM) = Net Interest Income / Average Earning Assets. "
-        "This is the core profitability metric for banks and financial institutions. "
-        "Returns NIM trend over 4 quarters, YoY change, and benchmark context. "
-        "A NIM above 3.5% is strong for US banks; below 2.5% signals compression risk."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "ticker": {"type": "string", "description": "Ticker symbol, e.g. 'JPM'"}
-        },
-        "required": ["ticker"]
-    }
-}
+nim_tool = _tool_schema(
+    "get_net_interest_margin",
+    "Net Interest Margin (NIM) = Net Interest Income / Average Earning Assets. "
+    "This is the core profitability metric for banks and financial institutions. "
+    "Returns NIM trend over 4 quarters, YoY change, and benchmark context. "
+    "A NIM above 3.5% is strong for US banks; below 2.5% signals compression risk.",
+    example="JPM",
+)
 
 def get_net_interest_margin(ticker: str) -> str:
     try:
@@ -124,22 +118,14 @@ def get_net_interest_margin(ticker: str) -> str:
 # Rising provisions are the earliest warning signal for credit cycle deterioration —
 # they appear 2–4 quarters before charge-offs hit.
 
-llp_tool = {
-    "name": "get_loan_loss_provisions",
-    "description": (
-        "Provision for Credit Losses as % of Total Loans, trended over 4 years. "
-        "Rising provisions are an early warning of credit deterioration that appears "
-        "2–4 quarters before actual loan losses show up. Above 1% is elevated; "
-        "above 2% signals significant stress. Below 0.3% in a normal cycle is lean."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "ticker": {"type": "string", "description": "Ticker symbol, e.g. 'BAC'"}
-        },
-        "required": ["ticker"]
-    }
-}
+llp_tool = _tool_schema(
+    "get_loan_loss_provisions",
+    "Provision for Credit Losses as % of Total Loans, trended over 4 years. "
+    "Rising provisions are an early warning of credit deterioration that appears "
+    "2–4 quarters before actual loan losses show up. Above 1% is elevated; "
+    "above 2% signals significant stress. Below 0.3% in a normal cycle is lean.",
+    example="BAC",
+)
 
 def get_loan_loss_provisions(ticker: str) -> str:
     try:
@@ -241,22 +227,14 @@ def get_loan_loss_provisions(ticker: str) -> str:
 # For banks: Net Revenue = Net Interest Income + Non-Interest Income
 # Below 60% is good; below 50% is excellent; above 70% signals structural cost issues.
 
-efficiency_ratio_tool = {
-    "name": "get_efficiency_ratio",
-    "description": (
-        "Bank Efficiency Ratio = Non-Interest Expense / Net Revenue. "
-        "Below 60% is considered good for US banks; below 50% is excellent; "
-        "above 70% indicates structural cost problems. Returns efficiency ratio, "
-        "trend over 3 years, and peer benchmark assessment."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "ticker": {"type": "string", "description": "Ticker symbol, e.g. 'WFC'"}
-        },
-        "required": ["ticker"]
-    }
-}
+efficiency_ratio_tool = _tool_schema(
+    "get_efficiency_ratio",
+    "Bank Efficiency Ratio = Non-Interest Expense / Net Revenue. "
+    "Below 60% is considered good for US banks; below 50% is excellent; "
+    "above 70% indicates structural cost problems. Returns efficiency ratio, "
+    "trend over 3 years, and peer benchmark assessment.",
+    example="WFC",
+)
 
 def get_efficiency_ratio(ticker: str) -> str:
     try:

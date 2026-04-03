@@ -10,29 +10,23 @@ Industrials sector tools:
 import json
 import yfinance as yf
 
+from tools_base import _tool_schema
+
 # ── Book-to-Bill ───────────────────────────────────────────────────────────────
 # True B2B ratio = new orders / revenue, reported by semiconductors and industrials.
 # This isn't available via free APIs for most companies.
 # Proxy: quarterly revenue acceleration/deceleration as a backlog signal.
 # Accelerating revenue → implied B2B > 1.0; decelerating → implied B2B < 1.0.
 
-book_to_bill_tool = {
-    "name": "get_book_to_bill",
-    "description": (
-        "Estimates book-to-bill using quarterly revenue acceleration as a proxy. "
-        "Accelerating sequential revenue growth implies orders exceed billings (B2B > 1). "
-        "Decelerating implies backlog is shrinking (B2B < 1). Returns estimated B2B "
-        "direction, revenue momentum, and 4-quarter quarterly revenue trend. "
-        "True B2B requires earnings release order data; this tool uses financial proxies."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "ticker": {"type": "string", "description": "Ticker symbol, e.g. 'HON'"}
-        },
-        "required": ["ticker"]
-    }
-}
+book_to_bill_tool = _tool_schema(
+    "get_book_to_bill",
+    "Estimates book-to-bill using quarterly revenue acceleration as a proxy. "
+    "Accelerating sequential revenue growth implies orders exceed billings (B2B > 1). "
+    "Decelerating implies backlog is shrinking (B2B < 1). Returns estimated B2B "
+    "direction, revenue momentum, and 4-quarter quarterly revenue trend. "
+    "True B2B requires earnings release order data; this tool uses financial proxies.",
+    example="HON",
+)
 
 def get_book_to_bill(ticker: str) -> str:
     try:
@@ -149,23 +143,15 @@ def get_book_to_bill(ticker: str) -> str:
 # We proxy using: revenue per employee (throughput), capex/revenue trend (expansion signal),
 # and operating leverage (whether revenue growth converts to operating income at a high rate).
 
-capacity_util_tool = {
-    "name": "get_capacity_utilization",
-    "description": (
-        "Estimates capacity utilization using revenue per employee (throughput proxy), "
-        "capex/revenue trend (capacity expansion signal), and operating leverage "
-        "(how much of incremental revenue drops to operating income). "
-        "Rising revenue-per-employee + declining capex/revenue = high utilization. "
-        "Returns utilization signal, operating leverage measurement, and capex intensity."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "ticker": {"type": "string", "description": "Ticker symbol, e.g. 'CAT'"}
-        },
-        "required": ["ticker"]
-    }
-}
+capacity_util_tool = _tool_schema(
+    "get_capacity_utilization",
+    "Estimates capacity utilization using revenue per employee (throughput proxy), "
+    "capex/revenue trend (capacity expansion signal), and operating leverage "
+    "(how much of incremental revenue drops to operating income). "
+    "Rising revenue-per-employee + declining capex/revenue = high utilization. "
+    "Returns utilization signal, operating leverage measurement, and capex intensity.",
+    example="CAT",
+)
 
 def get_capacity_utilization(ticker: str) -> str:
     try:

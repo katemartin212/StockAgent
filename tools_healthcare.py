@@ -11,27 +11,21 @@ Healthcare sector tools:
 import json
 import yfinance as yf
 
+from tools_base import _tool_schema
+
 # ── Pipeline Value ─────────────────────────────────────────────────────────────
 # R&D data is the best proxy available via free APIs. Actual pipeline stage counts
 # (Phase 1/2/3) require parsing SEC 10-K/10-Q filings or specialized databases.
 # We flag this clearly so the analyst knows the limitation.
 
-pipeline_value_tool = {
-    "name": "get_pipeline_value",
-    "description": (
-        "Estimates pharmaceutical/biotech pipeline optionality using R&D spend as % of revenue, "
-        "R&D spend trend (growing/shrinking), and R&D spend per market cap (a rough proxy for "
-        "investment intensity relative to company size). Returns R&D intensity score and "
-        "a pipeline health assessment. Note: actual Phase 1/2/3 counts require 10-K parsing."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "ticker": {"type": "string", "description": "Ticker symbol, e.g. 'JNJ'"}
-        },
-        "required": ["ticker"]
-    }
-}
+pipeline_value_tool = _tool_schema(
+    "get_pipeline_value",
+    "Estimates pharmaceutical/biotech pipeline optionality using R&D spend as % of revenue, "
+    "R&D spend trend (growing/shrinking), and R&D spend per market cap (a rough proxy for "
+    "investment intensity relative to company size). Returns R&D intensity score and "
+    "a pipeline health assessment. Note: actual Phase 1/2/3 counts require 10-K parsing.",
+    example="JNJ",
+)
 
 def get_pipeline_value(ticker: str) -> str:
     try:
@@ -133,23 +127,15 @@ def get_pipeline_value(ticker: str) -> str:
 # - R&D/revenue ratio trend (declining R&D often precedes patent cliff)
 # - Revenue growth deceleration as an early signal
 
-patent_cliff_tool = {
-    "name": "get_patent_cliff",
-    "description": (
-        "Estimates patent cliff risk by analyzing R&D spend trends, revenue growth "
-        "deceleration, and gross margin trajectory. A declining R&D/revenue ratio "
-        "combined with slowing revenue growth is a key early warning signal. "
-        "Flags if risk indicators suggest >30% of revenue could be at risk. "
-        "Note: actual patent expiry dates require 10-K/annual report parsing."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "ticker": {"type": "string", "description": "Ticker symbol, e.g. 'PFE'"}
-        },
-        "required": ["ticker"]
-    }
-}
+patent_cliff_tool = _tool_schema(
+    "get_patent_cliff",
+    "Estimates patent cliff risk by analyzing R&D spend trends, revenue growth "
+    "deceleration, and gross margin trajectory. A declining R&D/revenue ratio "
+    "combined with slowing revenue growth is a key early warning signal. "
+    "Flags if risk indicators suggest >30% of revenue could be at risk. "
+    "Note: actual patent expiry dates require 10-K/annual report parsing.",
+    example="PFE",
+)
 
 def get_patent_cliff(ticker: str) -> str:
     try:
@@ -276,22 +262,14 @@ def get_patent_cliff(ticker: str) -> str:
 # FDA PDUFA dates and trial results aren't in free APIs, so we proxy via news
 # activity and R&D investment concentration.
 
-fda_catalyst_tool = {
-    "name": "get_fda_catalyst_risk",
-    "description": (
-        "Scores FDA/regulatory binary event risk as high/medium/low using news sentiment "
-        "trajectory, R&D spend as % of revenue (high % = pipeline-dependent), and "
-        "revenue concentration (single-product risk). High R&D + high news activity + "
-        "low current revenue = high binary event risk."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "ticker": {"type": "string", "description": "Ticker symbol, e.g. 'MRNA'"}
-        },
-        "required": ["ticker"]
-    }
-}
+fda_catalyst_tool = _tool_schema(
+    "get_fda_catalyst_risk",
+    "Scores FDA/regulatory binary event risk as high/medium/low using news sentiment "
+    "trajectory, R&D spend as % of revenue (high % = pipeline-dependent), and "
+    "revenue concentration (single-product risk). High R&D + high news activity + "
+    "low current revenue = high binary event risk.",
+    example="MRNA",
+)
 
 def get_fda_catalyst_risk(ticker: str) -> str:
     try:

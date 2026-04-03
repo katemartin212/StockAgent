@@ -39,7 +39,15 @@ lsof -ti:8000 | xargs kill -9
 | File | Purpose |
 |------|---------|
 | `predictive_analytics.py` | 4 forward-looking models: factor attribution, earnings probability, scenario analysis, sentiment mean reversion |
+| `predictive/__init__.py` | Package root for predictive low-level helpers |
+| `predictive/_timeseries.py` | `align_weekly` (fetch + TZ normalize + resample), `robust_sigma` (MAD-based annualized σ), `zscore_log`, `decay_weights` |
+| `predictive/_ridge.py` | `weighted_ridge` — GCV-tuned Ridge regression with sandwich SEs and 95% CIs |
 | `validation.py` | Walk-forward out-of-sample validation framework. Produces HIGH/MEDIUM/LOW/UNVALIDATED tier |
+
+### Shared Utilities
+| File | Purpose |
+|------|---------|
+| `tools_base.py` | Shared helpers for all `tools_*.py` modules: `fetch_info`, `safe_ratio`, `_find_series`, `tool_result`, `_tool_schema` (generates standard single-ticker tool definition dicts) |
 
 ### Tool Modules
 | File | Tools |
@@ -57,11 +65,12 @@ lsof -ti:8000 | xargs kill -9
 | File | Source |
 |------|--------|
 | `_cache.py` | Two-layer cache: in-memory + SQLite persistence. Survives server restarts. |
-| `sec_edgar.py` | SEC EDGAR free API — financial filings |
+| `_http.py` | Shared HTTP helpers: `get(url)` (requests wrapper with default headers), `get_cached_http(key, url)` (fetch + cache in one call) |
+| `sec_edgar.py` | SEC EDGAR free API — financial filings. Exposes `get_edgar_form4` (alias: `get_insider_activity`) |
 | `reddit_sentiment.py` | Reddit API (PRAW) — retail sentiment with relevance filtering |
 | `stocktwits_sentiment.py` | StockTwits API — trader sentiment |
 | `trends_signal.py` | Google Trends via pytrends |
-| `fred_macro.py` | FRED St. Louis Fed — macro indicators |
+| `fred_macro.py` | FRED St. Louis Fed — macro indicators. Exposes `get_fred_macro` (alias: `get_macro_context`) |
 | `comps_data.py` | yfinance peer comparison table |
 
 Note: `open_insider.py` was deleted (2026-04-03) — OpenInsider consistently timed out at the 8s limit. Insider signals now come exclusively from SEC EDGAR Form 4 via `get_insider_activity()`.

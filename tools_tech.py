@@ -18,23 +18,17 @@ import feedparser
 import yfinance as yf
 import pandas as pd
 
+from tools_base import _tool_schema
+
 # ── News Sentiment ─────────────────────────────────────────────────────────────
 
-news_sentiment_tool = {
-    "name": "get_news_sentiment",
-    "description": (
-        "Fetch recent headlines from Yahoo Finance RSS and score them bullish/bearish/neutral "
-        "via keyword analysis. Returns overall sentiment label, score -100 to +100, and top "
-        "headlines. Use for IT, Healthcare, Consumer, and Energy sectors."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "ticker": {"type": "string", "description": "Ticker symbol, e.g. 'TSLA'"}
-        },
-        "required": ["ticker"]
-    }
-}
+news_sentiment_tool = _tool_schema(
+    "get_news_sentiment",
+    "Fetch recent headlines from Yahoo Finance RSS and score them bullish/bearish/neutral "
+    "via keyword analysis. Returns overall sentiment label, score -100 to +100, and top "
+    "headlines. Use for IT, Healthcare, Consumer, and Energy sectors.",
+    example="TSLA",
+)
 
 _NEWS_BULLISH = {
     "beat", "surge", "rally", "upgrade", "buy", "strong", "growth", "record",
@@ -89,20 +83,12 @@ def get_news_sentiment(ticker: str) -> str:
 
 # ── Earnings Surprise ──────────────────────────────────────────────────────────
 
-earnings_surprise_tool = {
-    "name": "get_earnings_surprise",
-    "description": (
-        "Last 4–6 quarters of EPS estimate vs actual — beat rate %, average surprise %, "
-        "and per-quarter detail. Companies beating >75% of estimates command valuation premiums."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "ticker": {"type": "string", "description": "Ticker symbol, e.g. 'MSFT'"}
-        },
-        "required": ["ticker"]
-    }
-}
+earnings_surprise_tool = _tool_schema(
+    "get_earnings_surprise",
+    "Last 4–6 quarters of EPS estimate vs actual — beat rate %, average surprise %, "
+    "and per-quarter detail. Companies beating >75% of estimates command valuation premiums.",
+    example="MSFT",
+)
 
 def get_earnings_surprise(ticker: str) -> str:
     try:
@@ -149,21 +135,13 @@ def get_earnings_surprise(ticker: str) -> str:
 
 # ── Reddit Sentiment ───────────────────────────────────────────────────────────
 
-reddit_sentiment_tool = {
-    "name": "get_reddit_sentiment",
-    "description": (
-        "Search r/wallstreetbets and r/investing for posts mentioning a ticker in the last 7 days. "
-        "Returns post volume, engagement, overall tone, and top posts. "
-        "High WSB volume + bullish tone often signals retail FOMO and crowding risk."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "ticker": {"type": "string", "description": "Ticker symbol, e.g. 'TSLA'"}
-        },
-        "required": ["ticker"]
-    }
-}
+reddit_sentiment_tool = _tool_schema(
+    "get_reddit_sentiment",
+    "Search r/wallstreetbets and r/investing for posts mentioning a ticker in the last 7 days. "
+    "Returns post volume, engagement, overall tone, and top posts. "
+    "High WSB volume + bullish tone often signals retail FOMO and crowding risk.",
+    example="TSLA",
+)
 
 _WSB_BULLISH = {
     "moon", "rocket", "bull", "buy", "calls", "long", "squeeze", "breakout",
@@ -228,21 +206,13 @@ def get_reddit_sentiment(ticker: str) -> str:
 # Proxied via same-quarter YoY revenue growth and deferred revenue trends.
 # Only meaningful for subscription/SaaS businesses.
 
-nrr_tool = {
-    "name": "get_net_revenue_retention",
-    "description": (
-        "Estimate NRR for SaaS/subscription businesses via same-quarter YoY revenue growth "
-        "and deferred revenue trends. Returns estimate, benchmark tier, and trend direction. "
-        "Returns a clear explanation if NRR is not applicable to the business model."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "ticker": {"type": "string", "description": "Ticker symbol, e.g. 'CRM'"}
-        },
-        "required": ["ticker"]
-    }
-}
+nrr_tool = _tool_schema(
+    "get_net_revenue_retention",
+    "Estimate NRR for SaaS/subscription businesses via same-quarter YoY revenue growth "
+    "and deferred revenue trends. Returns estimate, benchmark tier, and trend direction. "
+    "Returns a clear explanation if NRR is not applicable to the business model.",
+    example="CRM",
+)
 
 def get_net_revenue_retention(ticker: str) -> str:
     try:

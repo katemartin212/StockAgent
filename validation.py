@@ -27,10 +27,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as
 from scipy import stats as sp
 
 from data_sources._cache import cache_get, cache_set, cache_key
-from predictive_analytics import (
-    _fetch_weekly, _ols,
-    SECTOR_ETF_MAP, FACTOR_LABELS,
-)
+from predictive._timeseries import align_weekly as _fetch_weekly, decay_weights as _decay_weights
+from predictive._ridge import weighted_ridge as _ols
+from predictive_analytics import SECTOR_ETF_MAP, FACTOR_LABELS
 
 logger = logging.getLogger("stock_agent")
 
@@ -143,7 +142,7 @@ def validate_factor_model(ticker: str, sector: str = None) -> dict:
             X_te_norm = (X_lag[t] - mu) / sigma
 
             # Exponential decay: most recent training obs gets weight 1.0
-            decay_weights_tr = 0.98 ** np.arange(t - 1, -1, -1)
+            decay_weights_tr = _decay_weights(t)
 
             result = _ols(X_tr_norm, y_tr, weights=decay_weights_tr)
             if result is None:

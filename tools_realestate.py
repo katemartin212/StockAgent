@@ -10,28 +10,22 @@ Real Estate / REIT sector tools:
 import json
 import yfinance as yf
 
+from tools_base import _tool_schema
+
 # ── Funds From Operations ──────────────────────────────────────────────────────
 # FFO = Net Income + Depreciation & Amortization - Gains on Property Sales
 # P/FFO is the correct valuation multiple for REITs, not P/E.
 # GAAP net income includes large depreciation charges that make earnings
 # meaningless for real property — FFO adds them back.
 
-ffo_tool = {
-    "name": "get_ffo",
-    "description": (
-        "Calculates Funds From Operations (FFO) = Net Income + D&A - Gains on Property Sales. "
-        "FFO is the standard REIT profitability metric. Returns FFO per share, P/FFO multiple, "
-        "FFO yield, and assessment. P/FFO below 15× is generally undervalued for quality REITs; "
-        "above 25× is expensive. GAAP P/E is meaningless for REITs due to depreciation."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "ticker": {"type": "string", "description": "Ticker symbol, e.g. 'SPG'"}
-        },
-        "required": ["ticker"]
-    }
-}
+ffo_tool = _tool_schema(
+    "get_ffo",
+    "Calculates Funds From Operations (FFO) = Net Income + D&A - Gains on Property Sales. "
+    "FFO is the standard REIT profitability metric. Returns FFO per share, P/FFO multiple, "
+    "FFO yield, and assessment. P/FFO below 15× is generally undervalued for quality REITs; "
+    "above 25× is expensive. GAAP P/E is meaningless for REITs due to depreciation.",
+    example="SPG",
+)
 
 def get_ffo(ticker: str) -> str:
     try:
@@ -146,23 +140,15 @@ def get_ffo(ticker: str) -> str:
 # NOI = Revenue - Operating Expenses (before debt service, depreciation)
 # Property Value is approximated from total assets
 
-cap_rate_tool = {
-    "name": "get_cap_rate",
-    "description": (
-        "Estimates implied cap rate = Net Operating Income / Total Property Value. "
-        "NOI proxied from operating income + D&A (adding back non-cash charges). "
-        "Property value uses total assets from balance sheet. "
-        "Cap rates below 4% are expensive (low yield); above 7% is high yield/higher risk. "
-        "Returns cap rate, NOI, and assessment vs. current rate environment."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "ticker": {"type": "string", "description": "Ticker symbol, e.g. 'O'"}
-        },
-        "required": ["ticker"]
-    }
-}
+cap_rate_tool = _tool_schema(
+    "get_cap_rate",
+    "Estimates implied cap rate = Net Operating Income / Total Property Value. "
+    "NOI proxied from operating income + D&A (adding back non-cash charges). "
+    "Property value uses total assets from balance sheet. "
+    "Cap rates below 4% are expensive (low yield); above 7% is high yield/higher risk. "
+    "Returns cap rate, NOI, and assessment vs. current rate environment.",
+    example="O",
+)
 
 def get_cap_rate(ticker: str) -> str:
     try:

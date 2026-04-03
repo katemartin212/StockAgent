@@ -20,8 +20,7 @@ from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from data_sources._cache import cache_get, cache_set, cache_key, log_fetch, logger
-
-HEADERS = {"User-Agent": "StockResearchAgent/1.0"}
+from data_sources._http import get as _http_get
 
 # ── yfinance Treasury / commodity tickers ─────────────────────────────────────
 YF_TICKERS = {
@@ -128,8 +127,7 @@ def _fetch_fred_csv(series_id: str, label: str) -> tuple[str, dict | None]:
     """Attempt FRED CSV for a single series (short timeout, best-effort)."""
     try:
         url = f"{FRED_CSV_BASE}?id={series_id}"
-        r = requests.get(url, timeout=6, headers=HEADERS)
-        r.raise_for_status()
+        r = _http_get(url, timeout=6)
         rows = []
         for line in r.text.strip().splitlines()[1:]:
             parts = line.split(",")
@@ -267,3 +265,7 @@ def get_fred_macro() -> dict:
     log_fetch("FRED/macro", "macro_all", cached=False, elapsed_ms=out["_elapsed_ms"])
     cache_set(ck, out)
     return out
+
+
+# Alias for refactored import path
+get_macro_context = get_fred_macro
