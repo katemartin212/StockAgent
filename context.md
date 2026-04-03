@@ -224,7 +224,48 @@ Note: Google Trends returns 400 during test sessions (rate limiting). Sentiment 
 - **yfinance `earnings_history`** — only returns last 4 quarters. Validation uses `earnings_dates` instead (up to 24+ quarters).
 - **Factor model validation** — the factor model rarely passes validation for US equities. This is statistically expected: lagged weekly factor returns have very weak predictive power for next-week stock returns. The model is useful for attribution, not directional prediction.
 - **Port conflicts** — if you see "Address already in use", run `lsof -ti:8000 | xargs kill -9`.
+- **Adding a new tool** — use `_tool_schema(name, description, example)` from `tools_base` instead of a raw dict. Import `from tools_base import _tool_schema` at the top of the sector file. For non-ticker inputs (e.g., sector string), write the dict manually — `_tool_schema` is for single-ticker tools only.
 - **Cache TTLs** — snapshot data: 30 min. DCF core: 4h. Behavioral layer: uncached (fresh each call). Validation: 6h. Flush scenario cache: `DELETE FROM cache WHERE key LIKE 'pred_scenario%'` via sqlite3.
+
+---
+
+## Changes — 2026-04-03 (refactor session)
+
+### Utility extraction and boilerplate compression
+
+**`tools_base.py`** (new) — shared helpers imported by every `tools_*.py` file. Must stay pure Python — no API clients (Anthropic client stays in `tools_universal.py`):
+- `_tool_schema(name, description, example)` — generates the standard single-ticker tool definition dict. All 19 tool definitions across 8 files were converted to use this. **Always use this when adding a new single-ticker tool; never write the dict literal by hand.**
+- `fetch_info(ticker_or_obj, extra_fields)`, `safe_ratio`, `_find_series`, `tool_result`
+
+**`data_sources/_http.py`** (new) — shared HTTP helpers:
+- `get(url, *, headers, timeout, **kwargs)` — wraps `requests.get` with default `User-Agent` header and `raise_for_status()`
+- `get_cached_http(cache_key_str, url, ...)` — fetch + JSON parse + cache in one call
+- Note: `stocktwits_sentiment.py` does not use `_http.get` because it handles 404 specially (ticker-not-found is a valid state, not an error). `sec_edgar.py` has its own `_get()` helper with EDGAR-specific rate limiting and headers.
+
+**`predictive/` package** (new) — low-level helpers extracted from `predictive_analytics.py`:
+- `predictive/_timeseries.py`: `align_weekly` (fetch + TZ-strip + resample to W-FRI), `robust_sigma` (MAD-based annualized σ), `zscore_log`, `decay_weights(n, lam=0.98)`
+- `predictive/_ridge.py`: `weighted_ridge(X, y, weights)` — GCV-tuned Ridge with sandwich SEs
+
+**`predictive_analytics.py` aliases** — the extracted functions are exposed internally as aliases so existing call sites don't break:
+```python
+_fetch_weekly = align_weekly   # backward-compat alias
+_ols = weighted_ridge          # backward-compat alias
+```
+`align_weekly` does TZ normalization + resample internally, so the normalization loop in `get_factor_attribution` (lines ~109–117) is now a no-op on already-normalized data. It is harmless but redundant — can be removed in a future cleanup pass.
+
+**`validation.py` import rule** — imports `_fetch_weekly`, `_ols`, and `decay_weights` exclusively from the `predictive.*` submodules, not from `predictive_analytics`. This is intentional and must not be reverted:
+```python
+from predictive._timeseries import align_weekly as _fetch_weekly, decay_weights as _decay_weights
+from predictive._ridge import weighted_ridge as _ols
+from predictive_analytics import SECTOR_ETF_MAP, FACTOR_LABELS  # constants only
+```
+
+**Function aliases added to data sources** (for a consistent import path):
+- `data_sources/sec_edgar.py`: `get_insider_activity = get_edgar_form4`
+- `data_sources/fred_macro.py`: `get_macro_context = get_fred_macro`
+- Existing callers (`master_signal.py`, `server.py`) continue using the original names — both names point to the same function.
+
+**Deleted:** `copy_of_isom260_session4_build_your_first_agent (1).py` — stale course exercise file, no longer needed.
 
 ---
 
