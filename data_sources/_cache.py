@@ -36,7 +36,10 @@ logger = _make_logger()
 
 # ── SQLite setup ──────────────────────────────────────────────────────────────
 
-_DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "cache.db")
+_DB_PATH = os.environ.get(
+    "CACHE_DB_PATH",
+    os.path.join(os.path.dirname(os.path.dirname(__file__)), "cache.db"),
+)
 _db_lock = threading.Lock()
 _db_conn: sqlite3.Connection | None = None
 

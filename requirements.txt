@@ -13,3 +13,5 @@ pytrends
 scikit-learn
 scipy
 statsmodels
+python-jose[cryptography]
+bcrypt

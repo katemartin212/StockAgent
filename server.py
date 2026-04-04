@@ -13,11 +13,14 @@ Then open dashboard.html in your browser.
 import re
 import json
 import logging
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from typing import List, Optional
+
+import auth as _auth
 
 from master_signal import get_master_analysis
 from data_sources.comps_data import fetch_comps
@@ -81,6 +84,31 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+_auth.init_db()
+
+# ── Auth dependencies ──────────────────────────────────────────────────────────
+
+_bearer = HTTPBearer()
+
+
+def get_current_user(
+    creds: HTTPAuthorizationCredentials = Depends(_bearer),
+) -> dict:
+    try:
+        return _auth.verify_token(creds.credentials)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
+
+
+def require_quota(user: dict = Depends(get_current_user)) -> dict:
+    allowed, used, limit = _auth.check_and_increment_quota(user["id"], user["email"])
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Daily quota of {limit} requests exceeded. Resets at midnight UTC.",
+        )
+    return user
+
 
 class AnalyzeRequest(BaseModel):
     ticker: str
@@ -100,6 +128,11 @@ class ValidateRequest(BaseModel):
 class PrefetchRequest(BaseModel):
     ticker: str
     sources: Optional[List[str]] = None
+
+
+class AuthRequest(BaseModel):
+    email: str
+    password: str
 
 
 # ── Tool pipelines ────────────────────────────────────────────────────────────
@@ -704,6 +737,40 @@ def _stream_analysis(ticker: str):
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
+@app.get("/")
+def serve_dashboard():
+    import os
+    path = os.path.join(os.path.dirname(__file__), "dashboard.html")
+    return FileResponse(path, media_type="text/html")
+
+
+@app.post("/auth/register")
+def register(req: AuthRequest):
+    try:
+        user = _auth.create_user(req.email, req.password)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    token = _auth.create_token(user["id"], user["email"])
+    quota = _auth.get_quota_status(user["id"], user["email"])
+    return JSONResponse(content={"token": token, "email": user["email"], "quota": quota})
+
+
+@app.post("/auth/login")
+def login(req: AuthRequest):
+    user = _auth.authenticate(req.email, req.password)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    token = _auth.create_token(user["id"], user["email"])
+    quota = _auth.get_quota_status(user["id"], user["email"])
+    return JSONResponse(content={"token": token, "email": user["email"], "quota": quota})
+
+
+@app.get("/auth/me")
+def me(user: dict = Depends(get_current_user)):
+    quota = _auth.get_quota_status(user["id"], user["email"])
+    return JSONResponse(content={"email": user["email"], "quota": quota})
+
+
 @app.get("/cache/stats")
 def get_cache_stats():
     from data_sources._cache import cache_stats
@@ -744,7 +811,7 @@ def _prefetch_background(ticker: str, sources: list[str]):
 
 
 @app.post("/prefetch")
-def prefetch(req: PrefetchRequest):
+def prefetch(req: PrefetchRequest, _user: dict = Depends(get_current_user)):
     """Fire slow fetches in background. Returns 202 immediately — never blocks."""
     ticker = req.ticker.upper().strip()
     import threading
@@ -758,7 +825,7 @@ def prefetch(req: PrefetchRequest):
 
 
 @app.post("/analyze")
-def analyze(req: AnalyzeRequest):
+def analyze(req: AnalyzeRequest, user: dict = Depends(require_quota)):
     ticker = req.ticker.upper().strip()
     return StreamingResponse(
         _stream_analysis(ticker),
@@ -825,7 +892,7 @@ def _generate_comps_verdict(comps: dict) -> str:
 
 
 @app.post("/comps")
-def comps(req: CompsRequest):
+def comps(req: CompsRequest, _user: dict = Depends(get_current_user)):
     try:
         data = fetch_comps(req.subject_ticker, req.peers, req.sector)
         verdict = _generate_comps_verdict(data)
@@ -836,7 +903,7 @@ def comps(req: CompsRequest):
 
 
 @app.post("/validate")
-def validate(req: ValidateRequest):
+def validate(req: ValidateRequest, _user: dict = Depends(get_current_user)):
     """
     Run walk-forward validation for all three predictive models.
     Returns tier (HIGH/MEDIUM/LOW/UNVALIDATED) and per-model cards.

@@ -1,0 +1,35 @@
+# fly.toml app configuration file generated for stock-research-agent on 2026-04-03T16:40:21-04:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'stock-research-agent'
+primary_region = 'iad'
+
+[build]
+
+[env]
+  AUTH_DB_PATH = '/data/auth.db'
+  CACHE_DB_PATH = '/data/cache.db'
+  DAILY_QUOTA = '10'
+  PORT = '8000'
+
+[[mounts]]
+  source = 'stock_agent_data'
+  destination = '/data'
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = 'off'
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = 'requests'
+    hard_limit = 10
+    soft_limit = 5
+
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '512mb'
