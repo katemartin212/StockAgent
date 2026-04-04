@@ -665,6 +665,37 @@ def _compute_dcf_core(ticker: str, peer_medians: dict | None = None) -> dict:
         else:
             consensus_g_fwd = rev_cagr_2y
 
+        # ── Fix 1: Reverse DCF sanity check on consensus estimate ─────────────
+        # If consensus implies > 60% revenue growth AND consensus Y1 > 1.4× the
+        # revenue level the current stock price already implies, the estimate is
+        # likely partially priced in — treat it as the bull case, not base.
+        consensus_reclassified = False
+        if rev_est_y1 and ttm_rev > 0 and price > 0:
+            current_ev = price * shares + total_debt - total_cash
+            if ebitda_margin > 0:
+                implied_y1_rev = current_ev / max(
+                    info.get("enterpriseToRevenue") or (current_ev / ttm_rev), 1.0
+                )
+            else:
+                implied_y1_rev = ttm_rev * (1 + rev_cagr_2y)
+            consensus_growth = (rev_est_y1 / ttm_rev - 1) if ttm_rev > 0 else 0
+            if consensus_growth > 0.60 and rev_est_y1 > implied_y1_rev * 1.40:
+                # Downgrade consensus to bull case; use midpoint for base.
+                # Use implied_y1_rev (market-implied, from current price) as the
+                # lower anchor — not ttm * (1 + CAGR), which is unreliable when
+                # the 2Y CAGR is a cyclical recovery spike (e.g. MU at 196%).
+                rev_est_y1_bull = rev_est_y1
+                rev_est_y2_bull = rev_est_y2
+                rev_est_y1 = (implied_y1_rev + rev_est_y1_bull) / 2
+                rev_est_y2 = rev_est_y1 * (1 + min(consensus_g_fwd, 0.25))
+                consensus_reclassified = True
+            else:
+                rev_est_y1_bull = rev_est_y1 * 1.08
+                rev_est_y2_bull = (rev_est_y2 * 1.08) if rev_est_y2 else None
+        else:
+            rev_est_y1_bull = (rev_est_y1 * 1.08) if rev_est_y1 else None
+            rev_est_y2_bull = (rev_est_y2 * 1.08) if rev_est_y2 else None
+
         # ── 10-year Treasury rate ─────────────────────────────────────────────
         rate_10y = 4.5  # % — default if fetch fails
         try:
@@ -681,7 +712,50 @@ def _compute_dcf_core(ticker: str, peer_medians: dict | None = None) -> dict:
 
         # ── Terminal FCF multiple (based on gross margin quality) ─────────────
         tm_base   = 18.0 if gross_margin > 0.60 else (14.0 if gross_margin > 0.40 else 10.0)
-        term_mult = {"bear": tm_base * 0.80, "base": tm_base, "bull": tm_base * 1.20}
+
+        # ── Fix 2: Sector-aware terminal multiple override ────────────────────
+        # Cyclical/commodity companies revert to trough multiples; software-grade
+        # multiples (14–18×) overstate long-run terminal value for these businesses.
+        _CYCLICAL_SECTORS_SET   = {"Technology", "Basic Materials", "Energy", "Industrials"}
+        _COMMODITY_KEYWORDS_SET = {
+            "memory", "dram", "nand",
+            "commodity", "mining", "refin", "steel", "chemical",
+            "chip", "semiconductor",
+            "fabricat",  # catches 'fabrication', 'fabricates', etc. — INTC integrated fab
+        }
+        _STRUCTURAL_GROWTH_KEYWORDS = {
+            "fabless", "neural", "accelerator",
+            "artificial intelligence", "machine learning",
+            "cuda", "parallel computing", "deep learning", "inference",
+        }
+        _company_name_lower = (info.get("longName") or "").lower()
+        _industry_lower     = (info.get("industry") or "").lower()
+        _desc_lower         = (info.get("longBusinessSummary") or "")[:600].lower()
+        is_structural_growth = any(
+            kw in _industry_lower or kw in _company_name_lower or kw in _desc_lower
+            for kw in _STRUCTURAL_GROWTH_KEYWORDS
+        )
+        is_cyclical_hardware = (
+            sector_name in _CYCLICAL_SECTORS_SET
+            and any(
+                kw in _industry_lower or kw in _company_name_lower or kw in _desc_lower
+                for kw in _COMMODITY_KEYWORDS_SET
+            )
+            and not is_structural_growth
+        )
+        _cyclical_hw_note = None
+        if is_cyclical_hardware:
+            tm_base = min(tm_base, 10.0)
+            _cyclical_hw_note = (
+                "Cyclical/commodity business detected — terminal FCF multiple capped at 10× "
+                "to reflect through-the-cycle mean reversion. Software-grade multiples "
+                "(14–18×) are not appropriate for commodity memory or hardware manufacturers."
+            )
+
+        if is_cyclical_hardware:
+            term_mult = {"bear": tm_base * 0.80, "base": tm_base, "bull": tm_base}
+        else:
+            term_mult = {"bear": tm_base * 0.80, "base": tm_base, "bull": tm_base * 1.20}
 
         # ── Revenue path builder (10 years) ───────────────────────────────────
         N = 10
@@ -706,6 +780,31 @@ def _compute_dcf_core(ticker: str, peer_medians: dict | None = None) -> dict:
         # so cyclical CAGR spikes (MU 196%) and hypergrowth (NVDA 73%) don't
         # produce astronomically large year-5 revenues.
         base_mid = min(max(consensus_g_fwd, 0.0), 0.35)
+
+        # ── Fix 3: Mean reversion for cyclical recovery situations ────────────
+        # A 2Y CAGR > 40% almost certainly reflects a cyclical recovery, not a
+        # structural growth rate. Blend toward the industry long-run average so
+        # the base case models mean reversion rather than continuation.
+        _INDUSTRY_LONG_RUN_GROWTH = {
+            "Semiconductors":        0.10,
+            "Semiconductor Memory":  0.08,
+            "Electronic Components": 0.07,
+            "Auto Manufacturers":    0.04,
+            "Steel":                 0.03,
+            "Oil & Gas E&P":         0.03,
+        }
+        _mean_rev_note    = None
+        _industry_long_run = _INDUSTRY_LONG_RUN_GROWTH.get(info.get("industry", ""))
+        if _industry_long_run and rev_cagr_2y > 0.40 and not is_structural_growth:
+            base_mid = min(base_mid, 0.40 * consensus_g_fwd + 0.60 * _industry_long_run)
+            _mean_rev_note = (
+                f"High cyclical recovery growth ({round(rev_cagr_2y*100,0):.0f}% 2Y CAGR) "
+                f"detected. Base case mid-term growth blended toward "
+                f"{info.get('industry', 'sector')} long-run rate "
+                f"({round(_industry_long_run*100,0):.0f}%) to avoid extrapolating recovery spike. "
+                f"See Limitation #5 in SCENARIO_MODEL_LIMITATIONS.md."
+            )
+
         bear_mid = min(hist_p50_growth, 0.05)
         # Bull must always be MORE growth than base in years 3–5.
         # Floor at base_mid × 1.20 so the ordering bear < base < bull holds even
@@ -715,7 +814,18 @@ def _compute_dcf_core(ticker: str, peer_medians: dict | None = None) -> dict:
 
         rev_bear = _rev_path(0.92, 0.92, bear_mid, 0.025)
         rev_base = _rev_path(1.00, 1.00, base_mid,  0.030)
-        rev_bull = _rev_path(1.08, 1.08, bull_mid,  0.035)
+        # Bull path: use consensus-reclassified estimates when applicable
+        _bull_y1_mult = (
+            (rev_est_y1_bull / rev_est_y1)
+            if (rev_est_y1 and rev_est_y1 > 0 and rev_est_y1_bull)
+            else 1.08
+        )
+        _bull_y2_mult = (
+            (rev_est_y2_bull / rev_est_y2)
+            if (rev_est_y2 and rev_est_y2 > 0 and rev_est_y2_bull)
+            else 1.08
+        )
+        rev_bull = _rev_path(_bull_y1_mult, _bull_y2_mult, bull_mid, 0.035)
 
         # ── FCF margin path builder ───────────────────────────────────────────
         # FCF_t = Rev_t × (gross_margin_t − opex_t − capex_t − sbc_t)
@@ -864,6 +974,10 @@ def _compute_dcf_core(ticker: str, peer_medians: dict | None = None) -> dict:
 
         # ── Auto-surface limitations ──────────────────────────────────────────
         active_limitations = []
+        if _cyclical_hw_note:
+            active_limitations.append(_cyclical_hw_note)
+        if _mean_rev_note:
+            active_limitations.append(_mean_rev_note)
         if 0 < gross_margin < 0.15:
             active_limitations.append(
                 "Limitation 10 — Low gross margin: EV/EBITDA or P/E would be a more "
@@ -935,6 +1049,9 @@ def _compute_dcf_core(ticker: str, peer_medians: dict | None = None) -> dict:
             "capex_pct":              round(capex_pct * 100, 2),
             "rev_cagr_2y_pct":        round(rev_cagr_2y * 100, 1),
             "using_consensus":        using_consensus,
+            "consensus_reclassified": consensus_reclassified,
+            "is_cyclical_hardware":   is_cyclical_hardware,
+            "is_structural_growth":   is_structural_growth,
             # DCF outputs
             "bear_p":  bear_p,  "base_p":  base_p,  "bull_p":  bull_p,
             "bear_ret": _ret(bear_p), "base_ret": _ret(base_p), "bull_ret": _ret(bull_p),
@@ -954,8 +1071,17 @@ def _compute_dcf_core(ticker: str, peer_medians: dict | None = None) -> dict:
                 f"Revenue at 2Y CAGR ({round(rev_cagr_2y * 100, 1)}%); margins flat"
             ),
             "bull_driver": (
+                (
+                    f"Year 1–2 revenue at analyst consensus "
+                    f"(${round(rev_est_y1_bull/1e9,1)}B); gross margin +100bps/yr×3; "
+                    f"consensus treated as bull case due to magnitude vs current price"
+                )
+                if (consensus_reclassified and rev_est_y1_bull) else
                 f"Year 1–2 revenue 8% above consensus; gross margin +100bps/yr×3; "
                 f"growth reaches {round(bull_mid * 100, 1)}% by year 5"
+            ) + (
+                f"; terminal multiple held at {tm_base:.0f}× (no expansion — cyclical company, cycle peak assumption)"
+                if is_cyclical_hardware else ""
             ),
             # comps
             "bear_ev_rev": bear_ev_rev, "base_ev_rev": base_ev_rev, "bull_ev_rev": bull_ev_rev,
@@ -1073,6 +1199,9 @@ def _apply_behavioral(dcf: dict, bi: dict) -> dict:
         "capex_pct":              dcf["capex_pct"],
         "rev_cagr_2y_pct":        dcf["rev_cagr_2y_pct"],
         "using_consensus":        dcf["using_consensus"],
+        "consensus_reclassified": dcf.get("consensus_reclassified", False),
+        "is_cyclical_hardware":   dcf.get("is_cyclical_hardware", False),
+        "is_structural_growth":   dcf.get("is_structural_growth", False),
         "pre_revenue":         dcf["pre_revenue"],
         "deeply_negative_fcf": dcf["deeply_negative_fcf"],
         "dcf_not_applicable":  dcf["dcf_not_applicable"],
@@ -1119,7 +1248,9 @@ def _apply_behavioral(dcf: dict, bi: dict) -> dict:
                 "year_projections":    dcf["yr_bull"],
                 "implied_ev_revenue":  dcf["bull_ev_rev"],
                 "implied_ev_ebitda":   dcf["bull_ev_ebitda"],
-                "terminal_multiple":   round(dcf["terminal_multiple_base"] * 1.20, 1),
+                "terminal_multiple":   round(
+                    dcf["terminal_multiple_base"] * (1.0 if dcf.get("is_cyclical_hardware") else 1.20), 1
+                ),
                 "net_cash_yr3_b":      dcf["net_cash_y3_bull"],
             },
         },
