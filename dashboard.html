@@ -1033,6 +1033,54 @@
     .phc-canvas-wrap { height: 160px; padding: 10px 14px 8px; }
     .phc-loading { padding: 36px 14px; text-align: center; font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #2E3E52; }
     .phc-error { padding: 20px 14px; text-align: center; font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #4A3A3A; }
+
+    /* ── Auth modal ──────────────────────────────────────────────────────────── */
+    .auth-overlay {
+      position: fixed; inset: 0; background: rgba(4,8,16,0.85);
+      display: flex; align-items: center; justify-content: center; z-index: 1000;
+    }
+    .auth-box {
+      background: #0A1628; border: 1px solid #334155; border-radius: 4px;
+      padding: 36px 32px 28px; width: 360px; max-width: calc(100vw - 32px);
+    }
+    .auth-logo { font-family: 'IBM Plex Mono', monospace; font-size: 11px;
+      letter-spacing: 2px; color: #94a3b8; margin-bottom: 28px; }
+    .auth-title { font-family: 'IBM Plex Mono', monospace; font-size: 13px;
+      letter-spacing: 1px; color: #C8D8E8; margin-bottom: 20px; }
+    .auth-field { margin-bottom: 14px; }
+    .auth-field label { display: block; font-family: 'IBM Plex Mono', monospace;
+      font-size: 9px; letter-spacing: 1px; color: #4A5A72; margin-bottom: 5px; }
+    .auth-field input {
+      width: 100%; box-sizing: border-box;
+      background: #060F1E; border: 1px solid #1E2E42; border-radius: 3px;
+      padding: 9px 11px; font-family: 'IBM Plex Mono', monospace; font-size: 12px;
+      color: #C8D8E8; outline: none; transition: border-color 0.15s;
+    }
+    .auth-field input:focus { border-color: #64748b; }
+    .auth-submit {
+      width: 100%; margin-top: 8px; padding: 10px;
+      background: transparent; border: 1px solid #64748b; border-radius: 3px;
+      font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 1.5px;
+      color: #94a3b8; cursor: pointer; transition: border-color 0.15s, color 0.15s;
+    }
+    .auth-submit:hover { border-color: #94a3b8; color: #C8D8E8; }
+    .auth-submit:disabled { opacity: 0.4; cursor: default; }
+    .auth-toggle { margin-top: 16px; text-align: center;
+      font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #3A4A5A; }
+    .auth-toggle button { background: none; border: none; color: #64748b;
+      font-family: 'IBM Plex Mono', monospace; font-size: 10px; cursor: pointer;
+      padding: 0; text-decoration: underline; }
+    .auth-toggle button:hover { color: #94a3b8; }
+    .auth-error { margin-top: 10px; padding: 8px 10px;
+      background: rgba(200,64,64,0.08); border: 1px solid rgba(200,64,64,0.25);
+      border-radius: 3px; font-family: 'IBM Plex Mono', monospace;
+      font-size: 10px; color: #C84040; }
+    .nav-user { font-family: 'IBM Plex Mono', monospace; font-size: 9px;
+      letter-spacing: 0.5px; color: #3A4A5A; }
+    .nav-logout { background: none; border: none; color: #3A4A5A;
+      font-family: 'IBM Plex Mono', monospace; font-size: 9px; letter-spacing: 0.5px;
+      cursor: pointer; padding: 0; text-decoration: underline; }
+    .nav-logout:hover { color: #64748b; }
   </style>
 </head>
 
@@ -2149,6 +2197,68 @@
       );
     }
 
+    // ── AuthModal ──────────────────────────────────────────────────────────────
+    function AuthModal({ onAuth }) {
+      const [mode, setMode]       = useState('login');   // 'login' | 'register'
+      const [email, setEmail]     = useState('');
+      const [password, setPassword] = useState('');
+      const [busy, setBusy]       = useState(false);
+      const [err, setErr]         = useState('');
+
+      async function submit(e) {
+        e.preventDefault();
+        setBusy(true); setErr('');
+        try {
+          const res = await fetch(`/auth/${mode}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: email.trim(), password }),
+          });
+          const data = await res.json();
+          if (!res.ok) { setErr(data.detail || 'Authentication failed'); return; }
+          localStorage.setItem('authToken', data.token);
+          localStorage.setItem('authEmail', data.email);
+          onAuth({ email: data.email, token: data.token, quota: data.quota });
+        } catch (e) {
+          setErr('Cannot reach server — is the app running?');
+        } finally {
+          setBusy(false);
+        }
+      }
+
+      return (
+        <div className="auth-overlay">
+          <div className="auth-box">
+            <div className="auth-logo">▸ RESEARCH</div>
+            <div className="auth-title">{mode === 'login' ? 'SIGN IN' : 'CREATE ACCOUNT'}</div>
+            <form onSubmit={submit}>
+              <div className="auth-field">
+                <label>EMAIL</label>
+                <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+                  autoFocus required autoComplete="username" />
+              </div>
+              <div className="auth-field">
+                <label>PASSWORD</label>
+                <input type="password" value={password} onChange={e => setPassword(e.target.value)}
+                  required minLength={8} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} />
+              </div>
+              <button className="auth-submit" type="submit" disabled={busy}>
+                {busy ? '...' : mode === 'login' ? 'SIGN IN' : 'CREATE ACCOUNT'}
+              </button>
+              {err && <div className="auth-error">{err}</div>}
+            </form>
+            <div className="auth-toggle">
+              {mode === 'login' ? <>No account?{' '}
+                <button onClick={() => { setMode('register'); setErr(''); }}>Register</button>
+              </> : <>Have an account?{' '}
+                <button onClick={() => { setMode('login'); setErr(''); }}>Sign in</button>
+              </>}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     // ── HomePage ───────────────────────────────────────────────────────────────
     function HomePage({ ticker, setTicker, runAnalysis, loading }) {
       const [inputVal, setInputVal] = useState(ticker && !['NVDA','AAPL','TSLA','MSFT','JNJ','JPM','HD','XOM'].includes(ticker) ? ticker : '');
@@ -2251,11 +2361,30 @@
       );
     }
 
-    // ── Backend URL ────────────────────────────────────────────────────────────
-    const BACKEND_URL = 'http://localhost:8000';
-
     // ── App ────────────────────────────────────────────────────────────────────
     function App() {
+      // Auth state ─────────────────────────────────────────────────────────────
+      const [authUser, setAuthUser] = useState(() => {
+        const t = localStorage.getItem('authToken');
+        const e = localStorage.getItem('authEmail');
+        return (t && e) ? { token: t, email: e } : null;
+      });
+
+      function handleAuth(user) { setAuthUser(user); }
+
+      function logout() {
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('authEmail');
+        setAuthUser(null);
+      }
+
+      // apiFetch: attaches Bearer token to every backend request
+      function apiFetch(url, opts = {}) {
+        const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+        if (authUser?.token) headers['Authorization'] = `Bearer ${authUser.token}`;
+        return fetch(url, { ...opts, headers });
+      }
+
       const [ticker, setTicker]             = useState('NVDA');
       const [analysis, setAnalysis]         = useState(null);
       const [loading, setLoading]           = useState(false);
@@ -2280,7 +2409,7 @@
       const [validating, setValidating]       = useState(false);
 
       useEffect(() => {
-        fetch(`${BACKEND_URL}/health`, { signal: AbortSignal.timeout(3000) })
+        fetch('/health', { signal: AbortSignal.timeout(3000) })
           .then(r => setBackendOk(r.ok))
           .catch(() => setBackendOk(false));
       }, []);
@@ -2291,9 +2420,8 @@
         const peers = analysis.company_overview?.competitors;
         if (!peers || peers.length === 0) return;
         setCompsLoading(true);
-        fetch(`${BACKEND_URL}/comps`, {
+        apiFetch('/comps', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             subject_ticker: analysis.ticker,
             peers,
@@ -2307,9 +2435,8 @@
 
       function prefetchTicker(t) {
         if (!t || t === ticker) return;
-        fetch(`${BACKEND_URL}/prefetch`, {
+        apiFetch('/prefetch', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ticker: t.trim().toUpperCase(), sources: ['edgar', 'fred', 'profile'] }),
         }).catch(() => {});   // fire-and-forget, never block
       }
@@ -2337,9 +2464,8 @@
         setExpandedTraceSteps({});
 
         try {
-          const res = await fetch(`${BACKEND_URL}/analyze`, {
+          const res = await apiFetch('/analyze', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ ticker: t }),
           });
 
@@ -2385,7 +2511,7 @@
           setBackendOk(false);
           setError(
             msg.includes('fetch') || msg.includes('Failed') || msg.includes('NetworkError')
-              ? `Cannot reach backend at ${BACKEND_URL} — is the server running?\n→ uvicorn server:app --reload`
+              ? `Cannot reach server — is the app running?\n→ uvicorn server:app --reload`
               : msg
           );
         } finally {
@@ -2400,9 +2526,8 @@
         if (!t) return;
         setValidating(true);
         try {
-          const res = await fetch(`${BACKEND_URL}/validate`, {
+          const res = await apiFetch('/validate', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ ticker: t, sector: analysis?.sector || null }),
           });
           const data = await res.json();
@@ -2469,6 +2594,8 @@
       const toTarget = analystTarget && currentPrice ? (((parseFloat(analystTarget) - currentPrice) / currentPrice) * 100).toFixed(1) : null;
       const avgVolM = analysis?.avg_volume_m;
 
+      if (!authUser) return <AuthModal onAuth={handleAuth} />;
+
       return (
         <div>
 
@@ -2482,9 +2609,11 @@
                   background: backendOk === true ? '#00C896' : backendOk === false ? '#C84040' : '#2E3E52',
                 }} />
                 <span className="status-text">
-                  {backendOk === false ? 'offline' : 'localhost:8000'}
+                  {backendOk === false ? 'offline' : 'online'}
                 </span>
               </div>
+              <span className="nav-user">{authUser.email}</span>
+              <button className="nav-logout" onClick={logout}>sign out</button>
               <button className="run-btn" onClick={runAnalysis} disabled={loading}>
                 {loading ? 'RUNNING...' : 'RUN ANALYSIS'}
               </button>
