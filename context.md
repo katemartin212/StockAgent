@@ -221,6 +221,7 @@ Note: Google Trends returns 400 during test sessions (rate limiting). Sentiment 
 - **DCF scenario model — mid-term growth cap:** `base_mid` is capped at 35% to prevent cyclical recovery spikes (e.g., MU 196% 2Y CAGR) from producing astronomical 5-year revenues. See `SCENARIO_MODEL_LIMITATIONS.md` for full list of 12 model limitations.
 - **DCF scenario model — bull ordering guarantee:** `bull_mid` is floored at `base_mid × 1.20` to ensure bear < base < bull ordering when yfinance returns fewer than 8 quarters of quarterly income data (needed to compute historical growth percentiles).
 - **DCF scenario model — INTC (and similar fab-heavy companies):** INTC correctly classifies as `is_cyclical_hardware=True` and receives a 10× terminal multiple cap. However, all three scenario prices return `None` because DCF equity = PV(FCF) + net_cash is negative in all scenarios: INTC's capex is ~28% of revenue (massive fab investment cycle), SBC ~5%, and opex ~13%, producing FCF margin ≈ −8% in year 1. Combined with ~−$70B net debt, the equity value floors below zero. This does not trigger the `deeply_negative_fcf` guard (threshold: FCF margin < −50%) — it is a separate path in `_dcf()` that returns `None` when `equity <= 0`. None prices for INTC are correct model behavior, not a bug. Use EV/Sales or P/Book for INTC valuation while it remains in its fab buildout cycle.
+- **DCF scenario model — captive finance subsidiaries (e.g. CAT, DE, HON):** Industrial companies with large financial services arms (Caterpillar Financial, John Deere Financial) carry $20–45B of financial products debt on their consolidated balance sheet. This makes `net_cash = totalCash − totalDebt` massively negative (~−$35B for CAT), which can sink the bear-case equity to zero even with positive FCF. The dashboard now handles this gracefully: only scenarios where `equity > 0` are shown; null-price scenarios display "n/a" with a note. The weighted target is recomputed from the valid scenarios only. This is correct behavior — the DCF is structurally not suited to companies where debt is inventory (same issue as financial companies).
 - **DCF scenario model — international ADRs (e.g. TSM, ASML, SAP):** yfinance returns inconsistent price vs revenue currency for non-US ADRs — share price may be in USD while revenue figures are in local currency (TWD for TSM, EUR for ASML/SAP). This produces wildly inflated or deflated DCF implied prices. Do not rely on scenario analysis output for non-US ADRs without verifying currency consistency. This is a yfinance data limitation, not a model bug.
 - **Google Trends rate limiting** — pytrends returns 400 when hit too frequently. Circuit breaker opens after 3 errors in 10 min and skips Trends for the window. Sentiment model and sentiment validation fail silently with an error state.
 - **yfinance `earnings_history`** — only returns last 4 quarters. Validation uses `earnings_dates` instead (up to 24+ quarters).
@@ -228,6 +229,17 @@ Note: Google Trends returns 400 during test sessions (rate limiting). Sentiment 
 - **Port conflicts** — if you see "Address already in use", run `lsof -ti:8000 | xargs kill -9`.
 - **Adding a new tool** — use `_tool_schema(name, description, example)` from `tools_base` instead of a raw dict. Import `from tools_base import _tool_schema` at the top of the sector file. For non-ticker inputs (e.g., sector string), write the dict manually — `_tool_schema` is for single-ticker tools only.
 - **Cache TTLs** — snapshot data: 30 min. DCF core: 4h. Behavioral layer: uncached (fresh each call). Validation: 6h. Flush scenario cache: `DELETE FROM cache WHERE key LIKE 'pred_scenario%'` via sqlite3.
+
+---
+
+## Changes — 2026-04-23
+
+- **`dashboard.html`:** Fixed Predict tab crash for tickers where DCF scenario prices are `null` (negative equity value in bear case due to net debt exceeding discounted FCFs — common for industrial companies with captive finance arms like CAT).
+  - `ScenarioRange`: early-exit only if ALL three scenario prices are null; individual null prices render as "n/a" with explanation note
+  - Weighted target recomputed from valid scenarios only (weights redistributed proportionally)
+  - Null-price scenario axis dots skipped cleanly
+  - Added `PredictErrorBoundary` React class component wrapping the entire Predict tab — any future unhandled render error shows an inline message + retry button instead of crashing the full app
+  - Fixed auth fetch URL from relative `/auth/login` to `${BACKEND_URL}/auth/login` so the local `dashboard.html` (opened as a file) can reach the backend
 
 ---
 

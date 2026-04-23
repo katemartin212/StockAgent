@@ -1785,18 +1785,39 @@
     // ── ScenarioRange ──────────────────────────────────────────────────────────
     function ScenarioRange({ data, weights, onWeightChange }) {
       const { current_price, analyst_target, scenarios } = data;
+      if (!scenarios || !scenarios.bear || !scenarios.base || !scenarios.bull) {
+        return <div className="predict-error">✗ Scenario data incomplete — DCF model could not produce valid prices for this ticker.</div>;
+      }
       const bear = scenarios.bear;
       const base = scenarios.base;
       const bull = scenarios.bull;
 
-      const wt = round2 => Math.round(round2);
-      const allPrices = [bear.price, current_price, analyst_target, bull.price].filter(Boolean);
+      // Guard: only block rendering if ALL three scenario prices are null
+      if (bear.price == null && base.price == null && bull.price == null) {
+        const flags = data.deeply_negative_fcf ? 'deeply negative FCF' :
+                      data.pre_revenue ? 'pre-revenue' :
+                      data.is_financial ? 'financial sector (EV metrics n/a)' :
+                      data.dcf_not_applicable ? 'DCF not applicable' : 'negative equity value in all scenarios';
+        return (
+          <div className="predict-error">
+            ✗ DCF model returned no price for {flags}. Scenario analysis requires positive FCF or revenue.
+          </div>
+        );
+      }
+
+      // Note if any individual scenario couldn't be modelled (e.g. bear collapses under net debt)
+      const nullScenarios = ['bear','base','bull'].filter(k => scenarios[k]?.price == null);
+
+      const allPrices = [bear.price, current_price, analyst_target, bull.price].filter(p => p != null);
       const minP = Math.min(...allPrices) * 0.92;
       const maxP = Math.max(...allPrices) * 1.06;
-      const span = maxP - minP;
+      const span = maxP - minP || 1;
       const pos = p => `${Math.min(Math.max((p - minP) / span * 100, 1), 99)}%`;
 
-      const weighted = round2(bear.price * weights.bear + base.price * weights.base + bull.price * weights.bull);
+      // Weighted target: only include non-null scenarios, redistribute weights proportionally
+      const validScenarios = [['bear', bear], ['base', base], ['bull', bull]].filter(([, s]) => s.price != null);
+      const totalWeight = validScenarios.reduce((sum, [k]) => sum + weights[k], 0) || 1;
+      const weighted = round2(validScenarios.reduce((sum, [k, s]) => sum + s.price * (weights[k] / totalWeight), 0));
 
       const COLS = {
         bear: { color: '#C84040', border: 'rgba(200,64,64,0.3)' },
@@ -1813,19 +1834,23 @@
           <div className="scenario-range-axis">
             <div className="scenario-gradient-bar" />
             {/* Bear */}
-            <div className="scenario-dot" style={{ left: pos(bear.price) }}>
-              <div className="scenario-dot-circle" style={{ background: '#C84040' }} />
-              <div className="scenario-dot-label" style={{ color: '#C84040' }}>BEAR</div>
-              <div className="scenario-dot-ret"  style={{ color: '#C84040' }}>${bear.price.toFixed(0)}</div>
-            </div>
+            {bear.price != null && (
+              <div className="scenario-dot" style={{ left: pos(bear.price) }}>
+                <div className="scenario-dot-circle" style={{ background: '#C84040' }} />
+                <div className="scenario-dot-label" style={{ color: '#C84040' }}>BEAR</div>
+                <div className="scenario-dot-ret"  style={{ color: '#C84040' }}>${bear.price.toFixed(0)}</div>
+              </div>
+            )}
             {/* Current */}
-            <div className="scenario-dot" style={{ left: pos(current_price) }}>
-              <div className="scenario-dot-circle" style={{ background: '#D0D8E8' }} />
-              <div className="scenario-dot-label">NOW</div>
-              <div className="scenario-dot-ret"  style={{ color: '#D0D8E8' }}>${current_price.toFixed(0)}</div>
-            </div>
+            {current_price != null && (
+              <div className="scenario-dot" style={{ left: pos(current_price) }}>
+                <div className="scenario-dot-circle" style={{ background: '#D0D8E8' }} />
+                <div className="scenario-dot-label">NOW</div>
+                <div className="scenario-dot-ret"  style={{ color: '#D0D8E8' }}>${current_price.toFixed(0)}</div>
+              </div>
+            )}
             {/* Analyst target */}
-            {analyst_target && (
+            {analyst_target != null && (
               <div className="scenario-dot" style={{ left: pos(analyst_target) }}>
                 <div className="scenario-dot-circle" style={{ background: '#4A9FFF' }} />
                 <div className="scenario-dot-label" style={{ color: '#4A9FFF' }}>CONS.</div>
@@ -1833,11 +1858,13 @@
               </div>
             )}
             {/* Bull */}
-            <div className="scenario-dot" style={{ left: pos(bull.price) }}>
-              <div className="scenario-dot-circle" style={{ background: '#00C896' }} />
-              <div className="scenario-dot-label" style={{ color: '#00C896' }}>BULL</div>
-              <div className="scenario-dot-ret"  style={{ color: '#00C896' }}>${bull.price.toFixed(0)}</div>
-            </div>
+            {bull.price != null && (
+              <div className="scenario-dot" style={{ left: pos(bull.price) }}>
+                <div className="scenario-dot-circle" style={{ background: '#00C896' }} />
+                <div className="scenario-dot-label" style={{ color: '#00C896' }}>BULL</div>
+                <div className="scenario-dot-ret"  style={{ color: '#00C896' }}>${bull.price.toFixed(0)}</div>
+              </div>
+            )}
           </div>
 
           {/* Scenario detail cards */}
@@ -1848,15 +1875,22 @@
               return (
                 <div key={key} className="scenario-card" style={{ borderLeftColor: c.color, borderLeftWidth: 3 }}>
                   <div className="sc-name" style={{ color: c.color }}>{key}</div>
-                  <div className="sc-price" style={{ color: c.color }}>${s.price.toFixed(2)}</div>
-                  <div className="sc-ret"   style={{ color: s.return_pct >= 0 ? '#00C896' : '#C84040' }}>
-                    {s.return_pct >= 0 ? '+' : ''}{s.return_pct}%
+                  <div className="sc-price" style={{ color: c.color }}>{s.price != null ? `$${s.price.toFixed(2)}` : 'n/a'}</div>
+                  <div className="sc-ret"   style={{ color: s.return_pct != null && s.return_pct >= 0 ? '#00C896' : '#C84040' }}>
+                    {s.return_pct != null ? `${s.return_pct >= 0 ? '+' : ''}${s.return_pct}%` : '—'}
                   </div>
                   <div className="sc-driver">{s.key_driver}</div>
                 </div>
               );
             })}
           </div>
+
+          {/* Suppressed scenario note */}
+          {nullScenarios.length > 0 && (
+            <div className="ci-note" style={{ marginBottom: 10 }}>
+              {nullScenarios.join(', ')} scenario{nullScenarios.length > 1 ? 's' : ''} not shown — net debt (${Math.round(Math.abs((data.net_cash_b || 0)) * 10) / 10}B) exceeds discounted FCF in that scenario. This is common for companies with large captive finance subsidiaries (e.g. equipment financing arms).
+            </div>
+          )}
 
           {/* Probability weight sliders */}
           <div className="scenario-weights">
@@ -1879,6 +1913,36 @@
     }
 
     function round2(n) { return Math.round(n * 100) / 100; }
+
+    // ── PredictTab ErrorBoundary ────────────────────────────────────────────────
+    class PredictErrorBoundary extends React.Component {
+      constructor(props) { super(props); this.state = { error: null }; }
+      static getDerivedStateFromError(err) { return { error: err }; }
+      componentDidCatch(err, info) { console.error('PredictTab crash:', err, info); }
+      render() {
+        if (this.state.error) {
+          return (
+            <div style={{ padding: '32px 24px' }}>
+              <div className="predict-error" style={{ marginBottom: 8 }}>
+                ✗ Predict tab encountered a rendering error — {this.state.error.message}
+              </div>
+              <div style={{ fontSize: 10, color: '#2E3E52', fontFamily: "'IBM Plex Mono', monospace" }}>
+                Try running analysis again. If the error persists, the data for this ticker may be unsupported.
+              </div>
+              <button
+                onClick={() => this.setState({ error: null })}
+                style={{ marginTop: 12, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10,
+                         padding: '4px 12px', background: 'transparent', border: '1px solid #18243A',
+                         color: '#4A5A72', cursor: 'pointer', borderRadius: 2 }}
+              >
+                ↻ retry
+              </button>
+            </div>
+          );
+        }
+        return this.props.children;
+      }
+    }
 
     // ── ModelConfidencePanel ────────────────────────────────────────────────────
     function ModelConfidencePanel({ ticker, sector, validationData, onValidate, validating }) {
@@ -2209,7 +2273,7 @@
         e.preventDefault();
         setBusy(true); setErr('');
         try {
-          const res = await fetch(`/auth/${mode}`, {
+          const res = await fetch(`${BACKEND_URL}/auth/${mode}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email: email.trim(), password }),
@@ -3404,15 +3468,17 @@
                 Rendered independently of analysis so it appears as soon
                 as predictive_done fires — before Claude synthesis completes. */}
             {activeTab === 'predict' && (predictiveData || loading) && (
-              <PredictTab
-                predictiveData={predictiveData}
-                loading={predictiveLoading}
-                ticker={ticker}
-                sector={analysis?.sector || sectorInfo?.sector || null}
-                validationData={validationData}
-                onValidate={runValidation}
-                validating={validating}
-              />
+              <PredictErrorBoundary>
+                <PredictTab
+                  predictiveData={predictiveData}
+                  loading={predictiveLoading}
+                  ticker={ticker}
+                  sector={analysis?.sector || sectorInfo?.sector || null}
+                  validationData={validationData}
+                  onValidate={runValidation}
+                  validating={validating}
+                />
+              </PredictErrorBoundary>
             )}
 
             {/* Homepage */}
