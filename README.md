@@ -1,6 +1,6 @@
 # Stock Research Agent
 
-An AI-powered stock research tool for IT sector analysis, built with the Claude API and free data sources.
+An AI-powered stock research tool for equity research analysis, built with the Claude API and free data sources.
 
 ## Features
 
